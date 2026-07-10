@@ -1,0 +1,45 @@
+{
+  "name": "codex-shift",
+  "version": "0.1.0",
+  "description": "A small CLI and macOS menu bar app for switching Codex account contexts.",
+  "type": "module",
+  "main": "app/main.cjs",
+  "bin": {
+    "cxs": "./bin/cxs.js"
+  },
+  "scripts": {
+    "icons": "node scripts/generate-tray-icons.cjs",
+    "tray": "electron app/main.cjs",
+    "app": "electron app/main.cjs",
+    "test": "node --test",
+    "check": "node --check bin/cxs.js && node --check src/cli.js && node --check src/core.js && node --check src/codex-usage.js && node --check app/cli-installer.cjs && node --check app/main.cjs",
+    "pack:mac": "electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "dev.codex-shift.app",
+    "productName": "Codex Shift",
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "app/assets/app-icon-cxs.png",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "files": [
+      "app/**/*",
+      "src/**/*",
+      "bin/**/*",
+      "package.json",
+      "README.md"
+    ]
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT"
+}

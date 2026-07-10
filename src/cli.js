@@ -1,0 +1,297 @@
+import {
+  buildShellExport,
+  deleteProfile,
+  ensureProfile,
+  getCurrentProfile,
+  getProfileHome,
+  listProfiles,
+  readProfile,
+  runCodex,
+  setCurrentProfile,
+} from "./core.js";
+import readline from "node:readline";
+
+export async function main(argv, env = process.env) {
+  const [command, ...rest] = argv;
+
+  switch (command) {
+    case undefined:
+    case "-h":
+    case "--help":
+    case "help":
+      printHelp();
+      return;
+    case "add":
+      addProfile(rest, env);
+      return;
+    case "delete":
+    case "remove":
+    case "rm":
+      deleteProfileCommand(rest, env);
+      return;
+    case "list":
+      list(env);
+      return;
+    case "use":
+      useProfile(rest, env);
+      return;
+    case "current":
+      current(env);
+      return;
+    case "path":
+      printPath(rest, env);
+      return;
+    case "env":
+      printEnv(rest, env);
+      return;
+    case "login":
+      await login(rest, env);
+      return;
+    case "run":
+      await run(rest, env);
+      return;
+    case "exec":
+      await exec(rest, env);
+      return;
+    default:
+      throw new Error(`알 수 없는 명령입니다: ${command}\n\n${helpText()}`);
+  }
+}
+
+function addProfile(args, env) {
+  const { profileName, options } = parseProfileAndOptions(args);
+  const profile = ensureProfile(profileName, options, env);
+  console.log(`프로필을 준비했습니다: ${profile.name}`);
+  console.log(`CODEX_HOME=${profile.codexHome}`);
+}
+
+function list(env) {
+  const profiles = listProfiles(env);
+  const current = getCurrentProfile(env);
+
+  if (profiles.length === 0) {
+    console.log("등록된 프로필이 없습니다. 예: cxs add company");
+    return;
+  }
+
+  for (const profile of profiles) {
+    const marker = current?.name === profile.name ? "*" : " ";
+    console.log(`${marker} ${profile.name}\t${profile.codexHome}`);
+  }
+}
+
+function useProfile(args, env) {
+  const profileName = requireProfileName(args);
+  const profile = setCurrentProfile(profileName, env);
+  console.log(`현재 프로필: ${profile.name}`);
+  console.log(`CODEX_HOME=${profile.codexHome}`);
+}
+
+function deleteProfileCommand(args, env) {
+  const profileName = requireProfileName(args);
+  const profile = deleteProfile(profileName, env);
+  console.log(`프로필을 삭제했습니다: ${profile.name}`);
+  console.log(`삭제된 CODEX_HOME=${profile.codexHome}`);
+}
+
+function current(env) {
+  const profile = getCurrentProfile(env);
+  if (!profile) {
+    console.log("현재 선택된 프로필이 없습니다.");
+    return;
+  }
+
+  console.log(`${profile.name}\t${profile.codexHome}`);
+}
+
+function printPath(args, env) {
+  const profileName = requireProfileName(args);
+  console.log(getProfileHome(profileName, env));
+}
+
+function printEnv(args, env) {
+  const profileName = requireProfileName(args);
+  const profile = readProfile(profileName, env);
+  console.log(buildShellExport(profile));
+}
+
+async function login(args, env) {
+  const profileName = requireProfileName(args);
+  const profile = ensureProfile(profileName, {}, env);
+  const exitCode = await runCodex(profile, ["login"], env);
+  process.exitCode = exitCode;
+}
+
+async function run(args, env) {
+  const { profileName, commandArgs } = await parseRunArgs(args, env);
+  const profile = readProfile(profileName, env);
+  setCurrentProfile(profile.name, env);
+  const exitCode = await runCodex(profile, commandArgs, env);
+  process.exitCode = exitCode;
+}
+
+async function exec(args, env) {
+  const { profileName, commandArgs } = await parseRunArgs(args, env);
+  const profile = readProfile(profileName, env);
+  setCurrentProfile(profile.name, env);
+  const exitCode = await runCodex(profile, ["exec", ...commandArgs], env);
+  process.exitCode = exitCode;
+}
+
+function parseProfileAndOptions(args) {
+  const profileName = requireProfileName(args);
+  const options = {};
+
+  for (let index = 1; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === "--label") {
+      options.label = args[index + 1];
+      index += 1;
+      continue;
+    }
+    throw new Error(`알 수 없는 옵션입니다: ${arg}`);
+  }
+
+  return { profileName, options };
+}
+
+async function parseRunArgs(args, env) {
+  if (args.length === 0 || args[0] === "--") {
+    return {
+      profileName: await promptForProfile(env),
+      commandArgs: args[0] === "--" ? args.slice(1) : [],
+    };
+  }
+
+  const profileName = requireProfileName(args);
+  const separatorIndex = args.indexOf("--");
+  const commandArgs =
+    separatorIndex === -1 ? args.slice(1) : args.slice(separatorIndex + 1);
+  return { profileName, commandArgs };
+}
+
+async function promptForProfile(env) {
+  const profiles = listProfiles(env);
+  const current = getCurrentProfile(env);
+
+  if (profiles.length === 0) {
+    throw new Error("등록된 프로필이 없습니다. 먼저 `cxs add company`를 실행하세요.");
+  }
+
+  if (!process.stdin.isTTY || !process.stdout.isTTY) {
+    throw new Error(
+      "인터랙티브 선택을 사용할 수 없습니다. 예: `cxs run company`",
+    );
+  }
+
+  return selectProfileWithKeyboard(profiles, current);
+}
+
+function selectProfileWithKeyboard(profiles, current) {
+  const currentIndex = profiles.findIndex((profile) => profile.name === current?.name);
+  let selectedIndex = currentIndex === -1 ? 0 : currentIndex;
+  const stdin = process.stdin;
+  const stdout = process.stdout;
+  const previousRawMode = stdin.isRaw;
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      stdin.off("keypress", onKeypress);
+      if (typeof stdin.setRawMode === "function") {
+        stdin.setRawMode(previousRawMode);
+      }
+      stdin.pause();
+      stdout.write("\x1B[?25h");
+    };
+
+    const finish = (callback) => {
+      cleanup();
+      clearPicker(stdout);
+      callback();
+    };
+
+    const onKeypress = (_input, key = {}) => {
+      if (key.name === "up" || key.name === "k") {
+        selectedIndex = (selectedIndex - 1 + profiles.length) % profiles.length;
+        renderProfilePicker(stdout, profiles, selectedIndex);
+        return;
+      }
+
+      if (key.name === "down" || key.name === "j") {
+        selectedIndex = (selectedIndex + 1) % profiles.length;
+        renderProfilePicker(stdout, profiles, selectedIndex);
+        return;
+      }
+
+      if (key.name === "return" || key.name === "enter") {
+        const selectedProfile = profiles[selectedIndex];
+        finish(() => resolve(selectedProfile.name));
+        return;
+      }
+
+      if (key.name === "escape" || key.name === "q" || (key.ctrl && key.name === "c")) {
+        finish(() => reject(new Error("프로필 선택이 취소되었습니다.")));
+      }
+    };
+
+    readline.emitKeypressEvents(stdin);
+    if (typeof stdin.setRawMode === "function") {
+      stdin.setRawMode(true);
+    }
+    stdin.resume();
+    stdout.write("\x1B[?25l");
+    renderProfilePicker(stdout, profiles, selectedIndex);
+    stdin.on("keypress", onKeypress);
+  });
+}
+
+function renderProfilePicker(stdout, profiles, selectedIndex) {
+  clearPicker(stdout);
+  stdout.write("사용할 Codex 프로필을 선택하세요.\n\n");
+
+  profiles.forEach((profile, index) => {
+    const selected = index === selectedIndex;
+    const pointer = selected ? ">" : " ";
+    const line = `${pointer} ${profile.name}\n`;
+    stdout.write(selected ? `\x1B[7m${line}\x1B[0m` : line);
+  });
+
+  stdout.write("\n↑/↓ 이동, Enter 선택, q 또는 Esc 취소\n");
+}
+
+function clearPicker(stdout) {
+  stdout.write("\x1B[2J\x1B[H");
+}
+
+function requireProfileName(args) {
+  const profileName = args[0];
+  if (!profileName || profileName === "--") {
+    throw new Error("프로필 이름을 입력하세요.");
+  }
+  return profileName;
+}
+
+function printHelp() {
+  console.log(helpText());
+}
+
+function helpText() {
+  return `cxs
+
+사용법:
+  cxs add <profile> [--label <name>]
+  cxs delete <profile>
+  cxs list
+  cxs use <profile>
+  cxs current
+  cxs path <profile>
+  cxs env <profile>
+  cxs login <profile>
+  cxs run [profile] [-- <codex args...>]
+  cxs exec [profile] -- <prompt or codex exec args...>
+
+환경변수:
+  CXS_PROFILES_DIR  프로필별 CODEX_HOME 루트
+  CXS_STATE_DIR     현재 선택 프로필 상태 저장 위치
+`;
+}
