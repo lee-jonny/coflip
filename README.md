@@ -53,6 +53,11 @@ The tray app reads the same profiles as the CLI. From the menu bar you can:
 - run Login in Browser for a selected profile, with Terminal login as a fallback
 - open the profiles folder
 
+The menu bar app needs the Codex CLI for **Login in Browser** and **Login in
+Terminal**. It detects common Homebrew, npm/nvm, Volta, and pnpm installation
+locations. If your installation is elsewhere, launch the app with
+`CXS_CODEX_PATH` set to the full path of the `codex` executable.
+
 By default, the tray looks for an app named `Codex`. You can override that name
 when launching the tray:
 
@@ -87,6 +92,37 @@ For a distributable macOS build:
 ```sh
 npm run pack:mac
 ```
+
+### Installing a GitHub Release (macOS)
+
+This project is currently distributed without an Apple Developer ID certificate
+or Apple notarization. macOS therefore marks the app as quarantined after it is
+downloaded from GitHub; this is expected and does not mean the DMG is corrupted.
+
+1. Open the downloaded DMG and drag `Codex Shift.app` into `Applications`.
+2. In Finder, Control-click `Codex Shift.app`, then choose **Open** and confirm.
+
+If macOS instead reports that the app is damaged, remove the download quarantine
+attribute after copying it to `Applications`:
+
+```sh
+xattr -dr com.apple.quarantine "/Applications/Codex Shift.app"
+```
+
+Then open the app normally. Only run this command for a release you downloaded
+from this repository.
+
+Release builds use an explicit ad-hoc signature and disable the hardened runtime
+because they are not Developer ID signed. This makes the unsigned-build intent
+clear, but it does not replace Apple signing or notarization; a Developer ID
+signed and notarized release is required for a warning-free macOS installation.
+
+### Launch at login
+
+In the packaged app's menu bar menu, enable **Launch at login** to start Codex
+Shift automatically when you sign in to macOS. Disable the same item to remove
+it from the macOS login items list. This option is unavailable while running the
+app in development mode.
 
 ## Commands
 

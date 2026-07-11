@@ -183,11 +183,50 @@ function clearCurrentProfileIfSelected(name, env = process.env) {
   }
 }
 
-export function getCodexEnv(profile, env = process.env) {
+export function getCodexEnv(profile, env = process.env, codexCommand = null) {
+  const commandDirectory = codexCommand ? path.dirname(codexCommand) : null;
+  const pathEntries = [commandDirectory, env.PATH].filter(Boolean);
+
   return {
     ...env,
     CODEX_HOME: profile.codexHome,
+    PATH: pathEntries.join(path.delimiter),
   };
+}
+
+export function findCodexCommand(env = process.env) {
+  const explicitPath = env.CXS_CODEX_PATH;
+  if (explicitPath) {
+    return isExecutable(explicitPath) ? explicitPath : null;
+  }
+
+  const home = env.HOME || os.homedir();
+  const directories = [
+    ...String(env.PATH || "").split(path.delimiter),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+    path.join(home, ".local", "bin"),
+    path.join(home, ".npm-global", "bin"),
+    path.join(home, ".volta", "bin"),
+    path.join(home, ".local", "share", "pnpm"),
+  ];
+
+  for (const directory of getNvmBinDirectories(home)) {
+    directories.push(directory);
+  }
+
+  for (const directory of directories) {
+    if (!directory) {
+      continue;
+    }
+
+    const candidate = path.join(directory, "codex");
+    if (isExecutable(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 export function buildShellExport(profile) {
@@ -196,8 +235,14 @@ export function buildShellExport(profile) {
 
 export function runCodex(profile, args, env = process.env) {
   return new Promise((resolve, reject) => {
-    const child = spawn("codex", args, {
-      env: getCodexEnv(profile, env),
+    const command = findCodexCommand(env);
+    if (!command) {
+      reject(codexCommandNotFoundError());
+      return;
+    }
+
+    const child = spawn(command, args, {
+      env: getCodexEnv(profile, env, command),
       stdio: "inherit",
     });
 
@@ -210,6 +255,35 @@ export function runCodex(profile, args, env = process.env) {
       resolve(code ?? 0);
     });
   });
+}
+
+export function codexCommandNotFoundError() {
+  return new Error(
+    "Codex CLI를 찾을 수 없습니다. Codex CLI를 설치하거나 CXS_CODEX_PATH에 codex 실행 파일의 전체 경로를 지정해 주세요.",
+  );
+}
+
+function getNvmBinDirectories(home) {
+  const versionsDirectory = path.join(home, ".nvm", "versions", "node");
+  if (!fs.existsSync(versionsDirectory)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(versionsDirectory, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort((left, right) => right.localeCompare(left, undefined, { numeric: true }))
+    .map((version) => path.join(versionsDirectory, version, "bin"));
+}
+
+function isExecutable(file) {
+  try {
+    fs.accessSync(file, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function shellQuote(value) {

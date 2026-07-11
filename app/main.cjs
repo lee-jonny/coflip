@@ -99,6 +99,14 @@ function rebuildMenu() {
     },
     { type: "separator" },
     {
+      label: "Launch at login",
+      type: "checkbox",
+      checked: isLaunchAtLoginEnabled(),
+      enabled: process.platform === "darwin" && app.isPackaged,
+      click: toggleLaunchAtLogin,
+    },
+    { type: "separator" },
+    {
       label: "Install cxs CLI...",
       enabled: app.isPackaged,
       click: installCxsCli,
@@ -117,6 +125,25 @@ function rebuildMenu() {
 
   tray.setContextMenu(Menu.buildFromTemplate(items));
   updateTrayStatus();
+}
+
+function isLaunchAtLoginEnabled() {
+  if (process.platform !== "darwin" || !app.isPackaged) {
+    return false;
+  }
+
+  return app.getLoginItemSettings().openAtLogin;
+}
+
+function toggleLaunchAtLogin() {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !isLaunchAtLoginEnabled(),
+    });
+    rebuildMenu();
+  } catch (error) {
+    showError(error);
+  }
 }
 
 async function installCxsCli() {
@@ -342,9 +369,19 @@ function runCodexLogin(profile) {
   codexUsage.recordCodexLaunch(profile, core.getPaths());
   refreshCodexUsage(profile);
 
-  const child = spawn("codex", ["login"], {
-    env: core.getCodexEnv(profile, process.env),
-    stdio: ["ignore", "ignore", "pipe"],
+  const command = core.findCodexCommand(process.env);
+  if (!command) {
+    showError(core.codexCommandNotFoundError());
+    return;
+  }
+
+  const child = spawn(command, ["login"], {
+    env: core.getCodexEnv(profile, process.env, command),
+    // Codex CLI forwards its stdio to the native login process.  Giving it an
+    // ignored stdin closes that stream immediately, which the CLI can treat as
+    // a cancelled login before the browser callback arrives.  Keep a pipe open
+    // for the lifetime of the child instead.
+    stdio: ["pipe", "ignore", "pipe"],
   });
 
   let stderr = "";
@@ -366,9 +403,16 @@ function runCodexLogin(profile) {
 }
 
 function runCodexLoginInTerminal(profile) {
+  const codexCommand = core.findCodexCommand(process.env);
+  if (!codexCommand) {
+    showError(core.codexCommandNotFoundError());
+    return;
+  }
+
   const command = [
     `cd ${shellQuote(process.cwd())}`,
-    `CODEX_HOME=${shellQuote(profile.codexHome)} codex login`,
+    `PATH=${shellQuote(path.dirname(codexCommand))}:$PATH`,
+    `CODEX_HOME=${shellQuote(profile.codexHome)} ${shellQuote(codexCommand)} login`,
   ].join(" && ");
 
   codexUsage.recordCodexLaunch(profile, core.getPaths());
