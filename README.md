@@ -105,6 +105,8 @@ npm run pack:mac
 
 ### Installing a GitHub Release (macOS)
 
+처음 설치하거나 v0.2.1 이하에서 업데이트하려면 [최신 릴리스](https://github.com/willofi/codex-shift/releases/latest)에서 DMG를 받는다. v0.2.2부터는 앱 메뉴의 **Install cxs CLI...**로 설치한 `cxs`에서 `cxs update`를 실행하면 같은 페이지가 열린다. 업데이트하려면 실행 중인 Codex Shift를 종료하고 DMG의 앱을 기존 설치 위치에 복사해 교체한다.
+
 This project is currently distributed without an Apple Developer ID certificate
 or Apple notarization. macOS therefore marks the app as quarantined after it is
 downloaded from GitHub; this is expected and does not mean the DMG is corrupted.

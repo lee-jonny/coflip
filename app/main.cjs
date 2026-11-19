@@ -1,4 +1,4 @@
-const { app, clipboard, dialog, Menu, nativeImage, shell, Tray } = require("electron");
+const { app, clipboard, dialog, Menu, nativeImage, shell, systemPreferences, Tray } = require("electron");
 const { spawn } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
@@ -10,6 +10,10 @@ let codexUsage = null;
 let refreshTimer = null;
 
 app.setName("Codex Shift");
+if (process.platform === "darwin") {
+  // AppKit reads these app-local defaults when it creates the status item.
+  systemPreferences.registerDefaults({ NSStatusItemSpacing: 4, NSStatusItemSelectionPadding: 4 });
+}
 if (typeof app.setActivationPolicy === "function") {
   app.setActivationPolicy("accessory");
 }

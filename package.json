@@ -1,6 +1,6 @@
 {
   "name": "codex-shift",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A small CLI and macOS menu bar app for switching Codex account contexts.",
   "type": "module",
   "main": "app/main.cjs",

@@ -12,6 +12,7 @@ import {
 } from "./core.js";
 import { inspectTools } from "./tools.js";
 import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import os from "node:os";
 import readline from "node:readline";
 
@@ -28,6 +29,12 @@ export async function main(argv, env = process.env) {
     case "add":
       addProfile(rest, env);
       return;
+    case "update": {
+      const url = "https://github.com/willofi/codex-shift/releases/latest";
+      console.log(url);
+      if (process.platform === "darwin") execFileSync("/usr/bin/open", [url]);
+      return;
+    }
     case "delete":
     case "remove":
     case "rm":
@@ -282,6 +289,7 @@ function helpText() {
 
 사용법:
   cxs add <profile> [--label <name>]
+  cxs update                      최신 배포판 다운로드 페이지 열기
   cxs delete <profile>
   cxs list
   cxs use <profile>
