@@ -36,9 +36,9 @@ cxs run personal
 
 1. **각 Mac에서 기존 대화 위치를 확인한다.** 터미널에서 `cxs list`를 실행하면 Mac 이름과 홈 경로가 보인다. `@existing`은 그 프로세스의 `CODEX_HOME`을 사용하고, 지정하지 않았으면 `~/.codex`를 사용한다. 기존 로그인은 `cxs run @existing -- login status`로 확인한다. Finder에서 실행한 메뉴 앱과 터미널은 환경 변수가 다를 수 있으므로 화면의 홈 경로를 비교한다.
 2. **대화를 시작한 Mac에서 재개한다.** 프로젝트 폴더에서 `cxs resume @existing` 또는 `cxs resume personal`을 실행한다. 목록이 비면 `cxs resume personal -- --all`로 같은 홈의 모든 폴더를 조회한다. 이전에 `exec`로 만든 대화라면 지원 버전에서 `--include-non-interactive`도 추가한다. 프로필 이름은 Mac마다 달라도 된다.
-3. **자주 쓰는 Mac 한 대를 실행 호스트로 정한다.** 다른 Mac에서는 메뉴의 **Continue on another Mac… → Connect with SSH…**로 원래 Mac에 접속한다. macOS의 원격 로그인과 SSH 접속이 설정되어 있어야 한다. 접속한 터미널에서 프로젝트로 이동한 뒤 그 Mac의 `cxs resume`을 실행한다. 원래 Mac은 깨어 있고 연결되어 있어야 한다.
+3. **자주 쓰는 Mac 한 대를 실행 호스트로 정한다.** 다른 Mac에서는 메뉴의 **대화 이어서 → 다른 Mac에서 이어서… → Connect with SSH…**로 원래 Mac에 접속한다. macOS의 원격 로그인과 SSH 접속이 설정되어 있어야 한다. 접속한 터미널에서 프로젝트로 이동한 뒤 그 Mac의 `cxs resume`을 실행한다. 원래 Mac은 깨어 있고 연결되어 있어야 한다.
 4. **실행 위치까지 옮길 때는 Hand off를 사용한다.** 데스크톱의 **Settings → Connections**에서 목적지를 연결하고 같은 Git 저장소를 양쪽에 프로젝트로 등록한다. 하위 폴더 프로젝트는 양쪽에서 같은 하위 경로를 사용한다. 출발지에서 대화를 재개한 뒤 CLI에 `/app`을 입력하고 대화 하단의 실행 위치에서 목적지와 **Hand off**를 선택한다. 진행 중인 응답은 중단되므로 응답이 끝난 뒤 옮기는 편이 편하다. 목적지에서 마지막 대화와 Git 상태를 확인한다. [공식 원격 연결 가이드](https://learn.chatgpt.com/docs/remote-connections)
-5. **도구를 맞춘다.** 각 Mac에서 `cxs tools @existing` 또는 `cxs tools personal`로 CLI 버전과 지원되는 플러그인 목록을 확인한다. 필요한 `plugin@marketplace` 식별자만 적어 두고 대상 홈에서 `cxs run personal -- plugin add PLUGIN@MARKETPLACE`로 설치한다. 새 대화를 열고 해당 서비스의 연결 승인을 마친다. 메뉴 앱의 **Tool setup…**에서도 조회와 설치가 가능하다. Mac 화면 조작은 **Open desktop for Computer Use → Settings → Computer use → Any App**에서 설정하고 해당 Mac에서 화면 기록과 손쉬운 사용 권한을 승인한다. [플러그인](https://learn.chatgpt.com/docs/plugins) · [Computer Use](https://learn.chatgpt.com/docs/computer-use)
+5. **도구를 맞춘다.** 각 Mac에서 `cxs tools @existing` 또는 `cxs tools personal`로 CLI 버전과 지원되는 플러그인 목록을 확인한다. 필요한 `plugin@marketplace` 식별자만 적어 두고 대상 홈에서 `cxs run personal -- plugin add PLUGIN@MARKETPLACE`로 설치한다. 새 대화를 열고 해당 서비스의 연결 승인을 마친다. 메뉴 앱의 **설정 → 프로필 관리… → 도구 설정…**에서도 조회와 설치가 가능하다. Mac 화면 조작은 **Open desktop for Computer Use → Settings → Computer use → Any App**에서 설정하고 해당 Mac에서 화면 기록과 손쉬운 사용 권한을 승인한다. [플러그인](https://learn.chatgpt.com/docs/plugins) · [Computer Use](https://learn.chatgpt.com/docs/computer-use)
 
 업무 계정은 조직이 허용한 호스트와 저장소에서 사용한다. 세 Mac을 맞추기 위해 인증 파일이나 실행 중인 홈 전체를 동기화할 필요는 없다. 한도에 도달하면 해당 계정의 재설정·크레딧 옵션을 확인한다. [조사 근거와 정책](docs/research/codex-multi-mac.md)
 
@@ -58,21 +58,14 @@ Then start the macOS menu bar app:
 npm run tray
 ```
 
-The tray app reads the same profiles as the CLI. From the menu bar you can:
+메뉴 막대의 CoFlip 아이콘을 누른 다음 하려는 일을 고른다.
 
-- create a new profile by entering a profile name
-- delete a profile after a confirmation prompt
-- show experimental Codex usage status next to each profile
-- show the most recently opened profile's primary remaining usage next to the tray icon
-- open each profile's actions from its submenu
-- activate the existing Codex macOS app from a profile submenu
-- run Login in Browser for a selected profile, with Terminal login as a fallback
-- open the profiles folder
+- **대화 이어서 → 프로필**에서 이 Mac의 이전 대화를 연다. 작업 폴더가 정해졌다면 **폴더에서 이어서…**, 다른 Mac에 저장된 대화라면 **다른 Mac에서 이어서…**를 선택한다.
+- **Codex 앱 열기**는 선택한 프로필로 데스크톱을 연다. **새 대화**는 폴더를 선택하고 터미널에서 시작한다. 기존 Codex만 사용하는 경우 두 항목은 프로필을 추가로 묻지 않는다.
+- **사용량 → 프로필**에서 잔여량, 시간 범위, 확인 시각을 본다.
+- **설정 → 프로필 관리…**에서 프로필 경로를 확인하거나 로그인, 도구 설정, 삭제를 할 수 있다. 새 프로필 추가와 `cxs` 설치도 **설정**에 있다.
 
-The menu bar app needs the Codex CLI for **Login in Browser** and **Login in
-Terminal**. It detects common Homebrew, npm/nvm, Volta, and pnpm installation
-locations. If your installation is elsewhere, launch the app with
-`CXS_CODEX_PATH` set to the full path of the `codex` executable.
+터미널 실행과 로그인에는 Codex CLI가 필요하다. Homebrew, npm/nvm, Volta, pnpm의 일반 설치 경로를 찾는다. 다른 위치에 설치했다면 `CXS_CODEX_PATH`에 실행 파일의 절대 경로를 지정한다.
 
 By default, the tray looks for an app named `Codex`. You can override that name
 when launching the tray:
@@ -82,7 +75,7 @@ CXS_CODEX_APP_NAME="Codex" \
 npm run tray
 ```
 
-Open App launches Codex with the selected profile's `CODEX_HOME` when Codex is
+**Codex 앱 열기** launches Codex with the selected profile's `CODEX_HOME` when Codex is
 not already running. If Codex is already running, the tray asks whether to keep
 the existing workspace active or quit and reopen Codex with the selected profile.
 Profile-specific terminal execution is also available through `cxs run`.
@@ -92,10 +85,10 @@ Profile-specific terminal execution is also available through `cxs run`.
 The tray checks each available home's Codex App Server every ten minutes. It
 reads account status and ChatGPT rate-limit windows through `account/read`
 and `account/rateLimits/read`. Codex handles credential storage, including
-the macOS Keychain. The menu shows remaining percentages, **Needs login** for
-signed-out accounts that require authentication, and **Unavailable** for
+the macOS Keychain. The menu shows remaining percentages, **로그인 필요** for
+signed-out accounts that require authentication, and **조회 불가** for
 unsupported accounts or CLI versions. A failed refresh labels cached values
-**Last known**. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
+**이전 측정값**. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
 
 For a distributable macOS build:
 
@@ -112,7 +105,7 @@ brew tap willofi/codex-shift https://github.com/willofi/coflip.git
 brew install --cask willofi/codex-shift/codex-shift
 ```
 
-v0.2.3에서 업데이트한 경우 CoFlip을 한 번 열어 기존 CLI 실행 경로를 갱신한다. 앱 메뉴에서 **Install cxs CLI...**를 선택한 뒤 새 터미널에서 `cxs update`를 실행하면 Homebrew가 최신 릴리스를 확인하고 앱을 교체한다. 실행 중이었다면 다시 열어 새 버전을 사용한다. CLI 설치 없이도 `brew update && brew upgrade --cask willofi/codex-shift/codex-shift`를 쓸 수 있다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/willofi/coflip/releases/latest)에서 받는다.
+v0.2.3에서 업데이트한 경우 CoFlip을 한 번 열어 기존 CLI 실행 경로를 갱신한다. 앱 메뉴에서 **설정 → cxs 설치…**를 선택한 뒤 새 터미널에서 `cxs update`를 실행하면 Homebrew가 최신 릴리스를 확인하고 앱을 교체한다. 실행 중이었다면 다시 열어 새 버전을 사용한다. CLI 설치 없이도 `brew update && brew upgrade --cask willofi/codex-shift/codex-shift`를 쓸 수 있다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/willofi/coflip/releases/latest)에서 받는다.
 
 This project is currently distributed without an Apple Developer ID certificate
 or Apple notarization. macOS therefore marks the app as quarantined after it is
@@ -138,7 +131,7 @@ signed and notarized release is required for a warning-free macOS installation.
 
 ### Launch at login
 
-In the packaged app's menu bar menu, enable **Launch at login** to start Codex
+In the packaged app's menu bar menu, enable **설정 → Mac 로그인 시 실행** to start Codex
 Shift automatically when you sign in to macOS. Disable the same item to remove
 it from the macOS login items list. This option is unavailable while running the
 app in development mode.

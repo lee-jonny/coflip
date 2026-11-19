@@ -53,74 +53,159 @@ app.on("before-quit", () => {
 });
 
 function rebuildMenu() {
+  const recent = getRecentProfile();
   const profiles = core.listContexts();
-  const paths = core.getPaths();
-
-  const items = [{ label: os.hostname(), enabled: false }];
-  for (const profile of profiles) {
-    const usageState = codexUsage.getUsageState(profile, paths);
-    const existing = profile.name === core.EXISTING;
-    const submenu = [
-      { label: profile.codexHome, enabled: false },
-      { label: codexUsage.formatUsageDetail(usageState), enabled: false },
-      { type: "separator" },
-      { label: "Start CLI in folder…", click: () => pickFolderAndRun(profile, []) },
-      { label: "Resume in folder…", click: () => pickFolderAndRun(profile, ["resume"]) },
-      { label: "Resume across folders", click: () => openTerminal(profile, ["resume", "--all"]) },
-      { label: "Continue on another Mac…", click: () => continueElsewhere(profile).catch(showError) },
-      { label: "Tool setup…", click: () => toolSetup(profile).catch(showError) },
-      { label: "Open App", click: () => openAppForProfile(profile, getCodexAppName()) },
-      { label: "Login in Browser", click: () => runCodexLogin(profile) },
-      { label: "Login in Terminal", click: () => openTerminal(profile, ["login"]) },
-    ];
-    if (core.canDeleteProfile(profile)) {
-      submenu.push({ label: "Delete Profile…", click: () => deleteProfileFromPrompt(profile) });
-    }
-    items.push({ label: `${existing ? "Use existing Codex" : profile.name} · ${usageState.message}`, submenu });
-  }
-
-  items.push(
-    { type: "separator" },
-    {
-      label: "New profile...",
-      click: () => createProfileFromPrompt(),
-    },
-    {
-      label: "Open profiles folder",
-      click: () => shell.openPath(core.getPaths().profilesDir),
-    },
-    {
-      label: "Refresh",
-      click: refreshAllCodexUsage,
-    },
-    { type: "separator" },
-    {
-      label: "Launch at login",
-      type: "checkbox",
-      checked: isLaunchAtLoginEnabled(),
-      enabled: process.platform === "darwin" && app.isPackaged,
-      click: toggleLaunchAtLogin,
-    },
-    { type: "separator" },
-    {
-      label: "Install cxs CLI...",
-      enabled: app.isPackaged,
-      click: installCxsCli,
-    },
-    {
-      label: "Uninstall cxs CLI...",
-      enabled: app.isPackaged && cliInstaller.isCodexShiftLauncher(cliInstaller.getCliInstallPath()),
-      click: uninstallCxsCli,
-    },
-    { type: "separator" },
-    {
-      label: "Quit",
-      click: () => app.quit(),
-    },
+  const recentIndex = profiles.findIndex(
+    (profile) => profile.name === recent?.name && profile.codexHome === recent.codexHome,
   );
+  if (recentIndex > 0) profiles.unshift(profiles.splice(recentIndex, 1)[0]);
 
+  const resume = (profile) => openTerminal(profile, ["resume", "--all"]);
+  const openApp = (profile) => openAppForProfile(profile, getCodexAppName());
+  const startChat = (profile) => pickFolderAndRun(profile, []);
+
+  const items = [
+    {
+      label: "대화 이어서",
+      submenu: [
+        ...profileMenuItems(profiles, resume),
+        { type: "separator" },
+        {
+          label: "폴더에서 이어서…",
+          click: () => withChosenProfile(profiles, (profile) => pickFolderAndRun(profile, ["resume"])).catch(showError),
+        },
+        {
+          label: "다른 Mac에서 이어서…",
+          click: () => withChosenProfile(profiles, continueElsewhere).catch(showError),
+        },
+      ],
+    },
+    profiles.length === 1
+      ? { label: "Codex 앱 열기", click: () => openApp(profiles[0]).catch(showError) }
+      : { label: "Codex 앱 열기", submenu: profileMenuItems(profiles, openApp) },
+    profiles.length === 1
+      ? { label: "새 대화…", click: () => startChat(profiles[0]).catch(showError) }
+      : { label: "새 대화", submenu: profileMenuItems(profiles, startChat, "…") },
+    { type: "separator" },
+    {
+      label: "사용량",
+      submenu: [
+        ...profiles.map((profile) => ({
+          label: `${profileLabel(profile)} · ${usageSummary(profile)}`,
+          click: () => showUsage(profile).catch(showError),
+        })),
+        { type: "separator" },
+        { label: "새로 고침", click: refreshAllCodexUsage },
+      ],
+    },
+    { label: "설정", submenu: settingsMenu(profiles) },
+    { label: "종료", click: () => app.quit() },
+  ];
   tray.setContextMenu(Menu.buildFromTemplate(items));
-  updateTrayStatus();
+}
+
+function profileLabel(profile) {
+  return profile.name === core.EXISTING ? "기존 Codex" : profile.name;
+}
+
+function profileMenuItems(profiles, action, suffix = "") {
+  return profiles.map((profile) => ({
+    label: profileLabel(profile) + suffix,
+    click: () => Promise.resolve().then(() => action(profile)).catch(showError),
+  }));
+}
+
+async function withChosenProfile(profiles, action) {
+  if (profiles.length === 1) return action(profiles[0]);
+
+  const labels = profiles.map((profile) => appleScriptQuote(profileLabel(profile)));
+  const picked = await runAppleScriptPrompt([
+    `set selected to choose from list {${labels.join(", ")}} with prompt "사용할 프로필을 선택하세요."`,
+    'if selected is false then error number -128',
+    "return item 1 of selected",
+  ].join("\n"));
+  const profile = profiles.find((candidate) => profileLabel(candidate) === picked);
+  if (profile) return action(profile);
+}
+
+function usageSummary(profile) {
+  const state = codexUsage.getUsageState(profile, core.getPaths());
+  if (state.status === "needs-login") return "로그인 필요";
+  if (state.status === "last-known") return "이전 측정값";
+  if (state.status === "unknown") return "확인 전";
+  const percent = codexUsage.formatUsageTrayTitle(state);
+  if (percent) return `잔여 ${percent}`;
+  return state.status === "ok" ? "상세 보기" : "조회 불가";
+}
+
+async function showUsage(profile) {
+  const state = codexUsage.getUsageState(profile, core.getPaths());
+  const buttons = state.status === "needs-login" ? ["닫기", "브라우저 로그인…"] : ["닫기"];
+  const { response } = await dialog.showMessageBox({
+    title: "CoFlip",
+    message: `${profileLabel(profile)} · 사용량`,
+    detail: codexUsage.formatUsageDialogDetail(state),
+    buttons,
+    cancelId: 0,
+  });
+  if (response === 1) runCodexLogin(profile);
+}
+
+function settingsMenu(profiles) {
+  const settings = [
+    { label: "새 프로필…", click: createProfileFromPrompt },
+    {
+      label: "프로필 관리…",
+      click: () => withChosenProfile(profiles, manageProfile).catch(showError),
+    },
+    {
+      label: "프로필 폴더 열기",
+      click: () => shell.openPath(core.getPaths().profilesDir).then((error) => {
+        if (error) showError(error);
+      }, showError),
+    },
+  ];
+  if (app.isPackaged) {
+    const installed = cliInstaller.isCodexShiftLauncher(cliInstaller.getCliInstallPath());
+    settings.push(
+      { type: "separator" },
+      {
+        label: installed ? "cxs 다시 설치…" : "cxs 설치…",
+        click: () => installCxsCli().catch(showError),
+      },
+    );
+    if (installed) {
+      settings.push({ label: "cxs 제거…", click: () => uninstallCxsCli().catch(showError) });
+    }
+    if (process.platform === "darwin") {
+      settings.push({
+        label: "Mac 로그인 시 실행",
+        type: "checkbox",
+        checked: isLaunchAtLoginEnabled(),
+        click: toggleLaunchAtLogin,
+      });
+    }
+  }
+  return settings;
+}
+
+async function manageProfile(profile) {
+  const actions = [
+    { label: "브라우저 로그인…", run: () => runCodexLogin(profile) },
+    { label: "터미널 로그인", run: () => openTerminal(profile, ["login"]) },
+    { label: "도구 설정…", run: () => toolSetup(profile) },
+  ];
+  if (core.canDeleteProfile(profile)) {
+    actions.push({ label: "프로필 삭제…", run: () => deleteProfileFromPrompt(profile) });
+  }
+  const { response } = await dialog.showMessageBox({
+    title: "CoFlip",
+    message: profileLabel(profile),
+    detail: profile.codexHome,
+    buttons: ["닫기", ...actions.map(({ label }) => label)],
+    cancelId: 0,
+  });
+  await actions[response - 1]?.run();
 }
 
 function isLaunchAtLoginEnabled() {
@@ -331,8 +416,10 @@ function promptText(prompt, action) {
     `default button ${appleScriptQuote(action)}`,
     'cancel button "Cancel")',
   ].join(" ");
-  const script = [dialogScript, "return profileName"].join("\n");
+  return runAppleScriptPrompt([dialogScript, "return profileName"].join("\n"));
+}
 
+function runAppleScriptPrompt(script) {
   return new Promise((resolve, reject) => {
     const child = spawn("osascript", ["-e", script], {
       stdio: ["ignore", "pipe", "pipe"],
@@ -354,7 +441,7 @@ function promptText(prompt, action) {
         return;
       }
 
-      if (stderr.includes("User canceled")) {
+      if (stderr.includes("(-128)")) {
         resolve(null);
         return;
       }
@@ -394,7 +481,7 @@ function runCodexLogin(profile) {
       showError(
         new Error(
           stderr.trim() ||
-            "Codex login을 브라우저에서 시작할 수 없습니다. Login in Terminal을 시도해 주세요.",
+            "Codex login을 브라우저에서 시작할 수 없습니다. 설정의 프로필 관리에서 터미널 로그인을 시도해 주세요.",
         ),
       );
     }
@@ -507,7 +594,7 @@ function markProfileOpened(profile) {
   try {
     core.setCurrentProfile(profile.name);
     codexUsage.recordCodexLaunch(profile, core.getPaths());
-    updateTrayStatus();
+    rebuildMenu();
   } catch (error) {
     showError(error);
   }
@@ -660,28 +747,6 @@ function createTrayIcon() {
   const image = nativeImage.createFromPath(iconPath);
   image.setTemplateImage(true);
   return image;
-}
-
-function updateTrayStatus() {
-  if (!tray) {
-    return;
-  }
-
-  const profile = getRecentProfile();
-  if (!profile) {
-    tray.setTitle("");
-    tray.setToolTip("CoFlip");
-    return;
-  }
-
-  const usageState = codexUsage.getUsageState(profile, core.getPaths());
-  const title = codexUsage.formatUsageTrayTitle(usageState);
-  tray.setTitle(title);
-  tray.setToolTip(
-    title
-      ? `CoFlip · ${profile.name} · ${title}`
-      : `CoFlip · ${profile.name} · ${usageState.message}`,
-  );
 }
 
 function getRecentProfile() {

@@ -65,7 +65,13 @@ export async function refreshUsageState(profile, paths, { probe = readAccountLim
     if (status === "ok" && (hasNumber(limits?.primary?.usedPercent) || hasNumber(limits?.secondary?.usedPercent))) {
       const windows = [limits.primary, limits.secondary].filter(w => hasNumber(w?.usedPercent));
       const remainingText = windows.map(formatRateLimit).join(" / ");
-      const lastKnown = { type: "rate-limits", primary: limits.primary, secondary: limits.secondary, remainingText };
+      const lastKnown = {
+        type: "rate-limits",
+        primary: limits.primary,
+        secondary: limits.secondary,
+        remainingText,
+        measuredAt: new Date().toISOString(),
+      };
       update = { status, message: remainingText, lastKnown, reason: null };
     } else {
       const needsLogin = status === "needs-login";
@@ -116,6 +122,36 @@ export function formatUsageDetail(state) {
   }
 
   return state.message;
+}
+
+export function formatUsageDialogDetail(state) {
+  if (state.status === "needs-login") return "이 프로필에 로그인하면 사용량을 확인할 수 있습니다.";
+  if (state.status === "unknown") return "아직 사용량을 확인하지 않았습니다.";
+  if (state.status === "unavailable") return "사용량을 조회할 수 없습니다.";
+
+  const lines = [];
+  if (state.status === "last-known") lines.push("새로 조회하지 못해 이전 측정값을 표시합니다.");
+  for (const [label, limit] of [["기본 한도", state.lastKnown?.primary], ["추가 한도", state.lastKnown?.secondary]]) {
+    if (!limit) continue;
+    const { windowDurationMins, resetsAt } = normalizeRateLimit(limit);
+    const percent = getRemainingPercent(limit);
+    if (percent === null) continue;
+
+    const period = formatUsagePeriod(windowDurationMins);
+    const reset = resetsAt ? ` · ${formatReset(resetsAt)} 초기화` : "";
+    lines.push(`${label}${period} · 잔여 ${Math.round(percent)}%${reset}`);
+  }
+
+  const measuredAt = state.lastKnown?.measuredAt ?? (state.status === "ok" ? state.checkedAt : null);
+  if (measuredAt) lines.push(`확인 시각 ${formatLocalTime(measuredAt)}`);
+  return lines.join("\n") || "사용량을 조회할 수 없습니다.";
+}
+
+function formatUsagePeriod(minutes) {
+  if (!minutes) return "";
+  if (minutes % 1440 === 0) return ` (${minutes / 1440}일)`;
+  if (minutes % 60 === 0) return ` (${minutes / 60}시간)`;
+  return ` (${minutes}분)`;
 }
 
 export function formatUsageTrayTitle(state) {

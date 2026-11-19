@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   deleteUsageState,
   formatUsageDetail,
+  formatUsageDialogDetail,
   formatUsageMenuLabel,
   formatUsageTrayTitle,
   getUsageState,
@@ -80,6 +81,31 @@ test("formats usage detail as a short submenu hint", () => {
       reason: "ignored in the compact menu",
     }),
     /^Updated /,
+  );
+});
+
+test("keeps the original measurement time when showing cached usage", async () => {
+  const paths = testPaths();
+  const profile = testProfile(paths);
+  const current = await refreshUsageState(profile, paths, {
+    probe: async () => ({
+      status: "ok",
+      limits: { primary: { usedPercent: 25, windowDurationMins: 300 } },
+    }),
+  });
+  const cached = await refreshUsageState(profile, paths, {
+    probe: async () => { throw new Error("offline"); },
+  });
+
+  assert.ok(current.lastKnown.measuredAt);
+  assert.equal(cached.lastKnown.measuredAt, current.lastKnown.measuredAt);
+  const detail = formatUsageDialogDetail(cached);
+  assert.match(detail, /이전 측정값/);
+  assert.match(detail, /기본 한도 \(5시간\) · 잔여 75%/);
+  assert.equal(detail.split("\n").at(-1), formatUsageDialogDetail(current).split("\n").at(-1));
+  assert.doesNotMatch(
+    formatUsageDialogDetail({ ...cached, lastKnown: { ...cached.lastKnown, measuredAt: undefined } }),
+    /확인 시각/,
   );
 });
 
