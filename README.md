@@ -105,7 +105,14 @@ npm run pack:mac
 
 ### Installing a GitHub Release (macOS)
 
-처음 설치하거나 v0.2.1 이하에서 업데이트하려면 [최신 릴리스](https://github.com/willofi/codex-shift/releases/latest)에서 DMG를 받는다. v0.2.2부터는 앱 메뉴의 **Install cxs CLI...**로 설치한 `cxs`에서 `cxs update`를 실행하면 같은 페이지가 열린다. 업데이트하려면 실행 중인 Codex Shift를 종료하고 DMG의 앱을 기존 설치 위치에 복사해 교체한다.
+Apple Silicon Mac에서 Homebrew로 설치하려면 아래 명령을 한 번 실행한다. DMG로 설치한 기존 앱이 있으면 먼저 종료하고 기존 `/Applications/Codex Shift.app`을 다른 폴더로 옮긴다. 프로필은 앱 외부에 저장된다.
+
+```sh
+brew tap willofi/codex-shift https://github.com/willofi/codex-shift.git
+brew install --cask willofi/codex-shift/codex-shift
+```
+
+앱 메뉴에서 **Install cxs CLI...**를 선택한 뒤 새 터미널에서 `cxs update`를 실행하면 Homebrew가 최신 릴리스를 확인하고 앱을 교체한다. 실행 중이었다면 다시 열어 새 버전을 사용한다. CLI 설치 없이도 `brew update && brew upgrade --cask willofi/codex-shift/codex-shift`를 쓸 수 있다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/willofi/codex-shift/releases/latest)에서 받는다.
 
 This project is currently distributed without an Apple Developer ID certificate
 or Apple notarization. macOS therefore marks the app as quarantined after it is

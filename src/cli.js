@@ -12,7 +12,7 @@ import {
 } from "./core.js";
 import { inspectTools } from "./tools.js";
 import fs from "node:fs";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import os from "node:os";
 import readline from "node:readline";
 
@@ -29,12 +29,17 @@ export async function main(argv, env = process.env) {
     case "add":
       addProfile(rest, env);
       return;
-    case "update": {
-      const url = "https://github.com/willofi/codex-shift/releases/latest";
-      console.log(url);
-      if (process.platform === "darwin") execFileSync("/usr/bin/open", [url]);
+    case "update":
+      for (const args of [["update"], ["upgrade", "--cask", "willofi/codex-shift/codex-shift"]]) {
+        const result = spawnSync("brew", args, { stdio: "inherit", env });
+        if (result.error?.code === "ENOENT") throw new Error("Homebrew가 필요합니다. README의 Homebrew 설치 절차를 확인하세요.");
+        if (result.error) throw result.error;
+        if (result.status !== 0) {
+          process.exitCode = result.status ?? 1;
+          break;
+        }
+      }
       return;
-    }
     case "delete":
     case "remove":
     case "rm":
@@ -289,7 +294,7 @@ function helpText() {
 
 사용법:
   cxs add <profile> [--label <name>]
-  cxs update                      최신 배포판 다운로드 페이지 열기
+  cxs update                      Homebrew로 설치한 Codex Shift 업데이트
   cxs delete <profile>
   cxs list
   cxs use <profile>
