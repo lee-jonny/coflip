@@ -1,6 +1,6 @@
 cask "codex-shift" do
-  version "0.2.4"
-  sha256 "6b000d5d13f77b49d69e4daa4b784d78240f2620b224e0175b399e201185cbfd"
+  version "0.3.0"
+  sha256 "2dd369ac4a77aea7a5bef0be5f0a2341f304139ffd89f0d8bab1bcfdae80e352"
 
   url "https://github.com/willofi/coflip/releases/download/v#{version}/CoFlip-#{version}-arm64.dmg"
   name "CoFlip"
@@ -8,7 +8,7 @@ cask "codex-shift" do
   homepage "https://github.com/willofi/coflip"
 
   depends_on arch: :arm64
-  depends_on macos: ">= :monterey"
+  depends_on macos: :monterey
 
   app "CoFlip.app"
 end
