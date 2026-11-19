@@ -1,5 +1,6 @@
 const { app, clipboard, dialog, Menu, nativeImage, shell, Tray } = require("electron");
 const { spawn } = require("node:child_process");
+const os = require("node:os");
 const path = require("node:path");
 const cliInstaller = require("./cli-installer.cjs");
 
@@ -40,47 +41,30 @@ app.on("before-quit", () => {
 });
 
 function rebuildMenu() {
-  const profiles = core.listProfiles();
+  const profiles = core.listContexts();
   const paths = core.getPaths();
 
-  const items = [];
-
-  if (profiles.length === 0) {
-    items.push({
-      label: "No profiles yet",
-      enabled: false,
-    });
-  } else {
-    for (const profile of profiles) {
-      const usageState = codexUsage.getUsageState(profile, paths);
-      items.push({
-        label: codexUsage.formatUsageMenuLabel(profile, usageState),
-        submenu: [
-          {
-            label: codexUsage.formatUsageDetail(usageState),
-            enabled: false,
-          },
-          { type: "separator" },
-          {
-            label: "Open App",
-            click: () => openAppForProfile(profile, getCodexAppName()),
-          },
-          {
-            label: "Login in Browser",
-            click: () => runCodexLogin(profile),
-          },
-          {
-            label: "Login in Terminal",
-            click: () => runCodexLoginInTerminal(profile),
-          },
-          { type: "separator" },
-          {
-            label: "Delete Profile...",
-            click: () => deleteProfileFromPrompt(profile),
-          },
-        ],
-      });
+  const items = [{ label: os.hostname(), enabled: false }];
+  for (const profile of profiles) {
+    const usageState = codexUsage.getUsageState(profile, paths);
+    const existing = profile.name === core.EXISTING;
+    const submenu = [
+      { label: profile.codexHome, enabled: false },
+      { label: codexUsage.formatUsageDetail(usageState), enabled: false },
+      { type: "separator" },
+      { label: "Start CLI in folder…", click: () => pickFolderAndRun(profile, []) },
+      { label: "Resume in folder…", click: () => pickFolderAndRun(profile, ["resume"]) },
+      { label: "Resume across folders", click: () => openTerminal(profile, ["resume", "--all"]) },
+      { label: "Continue on another Mac…", click: () => continueElsewhere(profile).catch(showError) },
+      { label: "Tool setup…", click: () => toolSetup(profile).catch(showError) },
+      { label: "Open App", click: () => openAppForProfile(profile, getCodexAppName()) },
+      { label: "Login in Browser", click: () => runCodexLogin(profile) },
+      { label: "Login in Terminal", click: () => openTerminal(profile, ["login"]) },
+    ];
+    if (core.canDeleteProfile(profile)) {
+      submenu.push({ label: "Delete Profile…", click: () => deleteProfileFromPrompt(profile) });
     }
+    items.push({ label: `${existing ? "Use existing Codex" : profile.name} · ${usageState.message}`, submenu });
   }
 
   items.push(
@@ -250,9 +234,7 @@ async function showCliInstallSuccess(launcherPath) {
 async function refreshAllCodexUsage() {
   try {
     const paths = core.getPaths();
-    for (const profile of core.listProfiles()) {
-      await codexUsage.refreshUsageState(profile, paths);
-    }
+    await codexUsage.refreshContexts(core.listContexts(), getRecentProfile(), paths);
     rebuildMenu();
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));
@@ -283,6 +265,7 @@ async function createProfileFromPrompt() {
 function createProfile(name, label) {
   try {
     core.ensureProfile(name, { label });
+    rebuildMenu();
     refreshAllCodexUsage();
   } catch (error) {
     showError(error);
@@ -325,11 +308,15 @@ function promptForProfileName() {
     "사용 가능: 영문, 숫자, 하이픈(-), 언더스코어(_)",
   ].join("\n");
 
+  return promptText(prompt, "Create");
+}
+
+function promptText(prompt, action) {
   const dialogScript = [
     `set profileName to text returned of (display dialog ${appleScriptQuote(prompt)}`,
     `default answer ${appleScriptQuote("")}`,
-    'buttons {"Cancel", "Create"}',
-    'default button "Create"',
+    `buttons {"Cancel", ${appleScriptQuote(action)}}`,
+    `default button ${appleScriptQuote(action)}`,
     'cancel button "Cancel")',
   ].join(" ");
   const script = [dialogScript, "return profileName"].join("\n");
@@ -402,22 +389,71 @@ function runCodexLogin(profile) {
   });
 }
 
-function runCodexLoginInTerminal(profile) {
-  const codexCommand = core.findCodexCommand(process.env);
-  if (!codexCommand) {
-    showError(core.codexCommandNotFoundError());
-    return;
+async function pickFolderAndRun(profile, args) {
+  const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+  if (!canceled) openTerminal(profile, args, filePaths[0]);
+}
+
+function openTerminal(profile, args, folder = os.homedir()) {
+  const command = core.findCodexCommand();
+  if (!command) return showError(core.codexCommandNotFoundError());
+  markProfileOpened(profile);
+  const useNativeHome = profile.name === core.EXISTING && !process.env.CODEX_HOME;
+  runInTerminal([
+    `cd ${shellQuote(folder)}`,
+    `export PATH=${shellQuote(path.dirname(command))}:$PATH`,
+    useNativeHome ? "unset CODEX_HOME" : `export CODEX_HOME=${shellQuote(profile.codexHome)}`,
+    [command, ...args].map(shellQuote).join(" "),
+  ].join(" && "));
+}
+
+async function continueElsewhere(profile) {
+  const { response } = await dialog.showMessageBox({
+    message: "Where should the work run?",
+    detail: `Selected on ${os.hostname()}: ${profile.codexHome}\nTo use a chat stored on another Mac, SSH to that Mac and run cxs resume there. To move a local chat, resume it here, enter /app, then select its run location → Hand off. Both devices need a saved project for the same repository.`,
+    buttons: ["Connect with SSH…", "Resume for handoff", "Connections guide", "Cancel"], cancelId: 3,
+  });
+  if (response === 0) {
+    const host = await promptText("SSH host alias or user@hostname", "Connect");
+    if (!host) return;
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*$/.test(host)) throw new Error("Enter a host alias or user@hostname.");
+    runInTerminal(`ssh ${shellQuote(host)}`);
   }
+  if (response === 1) openTerminal(profile, ["resume", "--all"]);
+  if (response === 2) await shell.openExternal("https://learn.chatgpt.com/docs/remote-connections");
+}
 
-  const command = [
-    `cd ${shellQuote(process.cwd())}`,
-    `PATH=${shellQuote(path.dirname(codexCommand))}:$PATH`,
-    `CODEX_HOME=${shellQuote(profile.codexHome)} ${shellQuote(codexCommand)} login`,
-  ].join(" && ");
-
-  codexUsage.recordCodexLaunch(profile, core.getPaths());
-  refreshCodexUsage(profile);
-  runInTerminal(command);
+async function toolSetup(profile) {
+  const { inspectTools } = await import("../src/tools.js");
+  let tools;
+  try {
+    tools = await inspectTools(profile);
+  } catch (error) {
+    tools = { version: error.message, canList: false, canAdd: false, cliUnavailable: true };
+  }
+  const actions = [
+    ...(tools.canList ? [["List plugins", ["plugin", "list"]]] : []),
+    ...(tools.canAdd ? [["Install plugin…", ["plugin", "add"]]] : []),
+    ...(tools.cliUnavailable ? [] : [["Login status", ["login", "status"]]]),
+    ["Open desktop for Computer Use", null],
+    ["Computer Use guide", null],
+    ["Close", null],
+  ];
+  const { response } = await dialog.showMessageBox({
+    message: tools.version, detail: `${os.hostname()} · ${profile.codexHome}\nComputer Use: desktop Settings → Computer use → Any App. Approve Screen Recording and Accessibility on this Mac.`,
+    buttons: actions.map(([label]) => label), cancelId: actions.length - 1,
+  });
+  const [label, args] = actions[response];
+  if (label === "Open desktop for Computer Use") return openAppForProfile(profile, getCodexAppName());
+  if (label === "Computer Use guide") return shell.openExternal("https://learn.chatgpt.com/docs/computer-use");
+  if (!args) return;
+  if (label === "Install plugin…") {
+    const id = await promptText("Plugin ID from the marketplace (plugin@marketplace)", "Install");
+    if (!id) return;
+    if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.-]*@[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/.test(id)) throw new Error("Use plugin@marketplace.");
+    args.push(id);
+  }
+  openTerminal(profile, args);
 }
 
 async function openAppForProfile(profile, appName) {
@@ -432,8 +468,8 @@ async function openAppForProfile(profile, appName) {
       title: "Codex Shift",
       message: `${appName} is already running.`,
       detail: [
-        `To open ${profile.name} with its own CODEX_HOME, ${appName} needs to quit and launch again.`,
-        "Choose Activate Existing to keep the current app workspace unchanged.",
+        `Selected on ${os.hostname()}: ${profile.codexHome}. To use this home, ${appName} needs to quit and launch again.`,
+        "Activate Existing uses the running app. Its host and home may differ from this selection.",
       ].join("\n\n"),
     });
 
@@ -474,9 +510,9 @@ function openExistingApp(appName) {
 }
 
 function launchAppWithProfile(profile, appName) {
+  const explicitHome = profile.name !== core.EXISTING || process.env.CODEX_HOME;
   const child = spawn("open", [
-    "--env",
-    `CODEX_HOME=${profile.codexHome}`,
+    ...(explicitHome ? ["--env", `CODEX_HOME=${profile.codexHome}`] : []),
     "-a",
     appName,
   ], {

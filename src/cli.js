@@ -4,11 +4,15 @@ import {
   ensureProfile,
   getCurrentProfile,
   getProfileHome,
-  listProfiles,
+  listContexts,
+  EXISTING,
   readProfile,
   runCodex,
   setCurrentProfile,
 } from "./core.js";
+import { inspectTools } from "./tools.js";
+import fs from "node:fs";
+import os from "node:os";
 import readline from "node:readline";
 
 export async function main(argv, env = process.env) {
@@ -47,11 +51,24 @@ export async function main(argv, env = process.env) {
     case "login":
       await login(rest, env);
       return;
+    case "tools": {
+      const name = rest[0] || await promptForProfile(env);
+      const profile = readProfile(name, env);
+      const tools = await inspectTools(profile, env);
+      console.log(`${tools.version} · ${os.hostname()} · ${profile.codexHome}`);
+      console.log(`인증 확인: cxs run ${name} -- login status`);
+      console.log("Computer Use: 데스크톱 Settings → Computer use → Any App");
+      if (tools.canAdd) console.log(`설치: cxs run ${name} -- plugin add PLUGIN@MARKETPLACE`);
+      if (tools.canList) process.exitCode = await runCodex(profile, ["plugin", "list"], env);
+      else console.log("이 CLI에서는 플러그인 목록 조회를 지원하지 않습니다.");
+      return;
+    }
     case "run":
       await run(rest, env);
       return;
+    case "resume":
     case "exec":
-      await exec(rest, env);
+      await run(rest, env, [command]);
       return;
     default:
       throw new Error(`알 수 없는 명령입니다: ${command}\n\n${helpText()}`);
@@ -66,16 +83,12 @@ function addProfile(args, env) {
 }
 
 function list(env) {
-  const profiles = listProfiles(env);
+  const profiles = listContexts(env);
   const current = getCurrentProfile(env);
 
-  if (profiles.length === 0) {
-    console.log("등록된 프로필이 없습니다. 예: cxs add company");
-    return;
-  }
-
+  console.log(os.hostname());
   for (const profile of profiles) {
-    const marker = current?.name === profile.name ? "*" : " ";
+    const marker = current?.name === profile.name && current.codexHome === profile.codexHome ? "*" : " ";
     console.log(`${marker} ${profile.name}\t${profile.codexHome}`);
   }
 }
@@ -106,35 +119,28 @@ function current(env) {
 
 function printPath(args, env) {
   const profileName = requireProfileName(args);
-  console.log(getProfileHome(profileName, env));
+  console.log(profileName === EXISTING ? readProfile(profileName, env).codexHome : getProfileHome(profileName, env));
 }
 
 function printEnv(args, env) {
   const profileName = requireProfileName(args);
   const profile = readProfile(profileName, env);
-  console.log(buildShellExport(profile));
+  console.log(buildShellExport(profile, env));
 }
 
 async function login(args, env) {
   const profileName = requireProfileName(args);
-  const profile = ensureProfile(profileName, {}, env);
+  const exists = profileName === EXISTING || fs.existsSync(getProfileHome(profileName, env));
+  const profile = exists ? readProfile(profileName, env) : ensureProfile(profileName, {}, env);
   const exitCode = await runCodex(profile, ["login"], env);
   process.exitCode = exitCode;
 }
 
-async function run(args, env) {
+async function run(args, env, prefix = []) {
   const { profileName, commandArgs } = await parseRunArgs(args, env);
   const profile = readProfile(profileName, env);
   setCurrentProfile(profile.name, env);
-  const exitCode = await runCodex(profile, commandArgs, env);
-  process.exitCode = exitCode;
-}
-
-async function exec(args, env) {
-  const { profileName, commandArgs } = await parseRunArgs(args, env);
-  const profile = readProfile(profileName, env);
-  setCurrentProfile(profile.name, env);
-  const exitCode = await runCodex(profile, ["exec", ...commandArgs], env);
+  const exitCode = await runCodex(profile, [...prefix, ...commandArgs], env);
   process.exitCode = exitCode;
 }
 
@@ -171,12 +177,8 @@ async function parseRunArgs(args, env) {
 }
 
 async function promptForProfile(env) {
-  const profiles = listProfiles(env);
+  const profiles = listContexts(env);
   const current = getCurrentProfile(env);
-
-  if (profiles.length === 0) {
-    throw new Error("등록된 프로필이 없습니다. 먼저 `cxs add company`를 실행하세요.");
-  }
 
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
     throw new Error(
@@ -247,12 +249,12 @@ function selectProfileWithKeyboard(profiles, current) {
 
 function renderProfilePicker(stdout, profiles, selectedIndex) {
   clearPicker(stdout);
-  stdout.write("사용할 Codex 프로필을 선택하세요.\n\n");
+  stdout.write(`사용할 Codex 홈을 선택하세요 · ${os.hostname()}\n\n`);
 
   profiles.forEach((profile, index) => {
     const selected = index === selectedIndex;
     const pointer = selected ? ">" : " ";
-    const line = `${pointer} ${profile.name}\n`;
+    const line = `${pointer} ${profile.name === EXISTING ? "기존 Codex 사용 (@existing)" : profile.name}  ${profile.codexHome}\n`;
     stdout.write(selected ? `\x1B[7m${line}\x1B[0m` : line);
   });
 
@@ -288,6 +290,9 @@ function helpText() {
   cxs env <profile>
   cxs login <profile>
   cxs run [profile] [-- <codex args...>]
+  cxs tools [profile]
+  cxs resume [profile] [-- --all | SESSION_ID]
+  @existing 은 이 환경의 기존 Codex 홈을 사용합니다.
   cxs exec [profile] -- <prompt or codex exec args...>
 
 환경변수:

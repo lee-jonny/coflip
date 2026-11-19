@@ -12,7 +12,7 @@
     "tray": "electron app/main.cjs",
     "app": "electron app/main.cjs",
     "test": "node --test",
-    "check": "node --check bin/cxs.js && node --check src/cli.js && node --check src/core.js && node --check src/codex-usage.js && node --check app/cli-installer.cjs && node --check app/main.cjs",
+    "check": "node --check bin/cxs.js && node --check src/cli.js && node --check src/core.js && node --check src/codex-usage.js && node --check src/app-server.js && node --check src/tools.js && node --check app/cli-installer.cjs && node --check app/main.cjs",
     "pack:mac": "electron-builder --mac"
   },
   "devDependencies": {

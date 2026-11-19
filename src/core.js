@@ -21,6 +21,20 @@ export function getPaths(env = process.env) {
   };
 }
 
+export const EXISTING = "@existing";
+
+export function existingProfile(env = process.env) {
+  return {
+    name: EXISTING,
+    label: "Existing Codex",
+    codexHome: path.resolve(env.CODEX_HOME || path.join(env.HOME || os.homedir(), ".codex")),
+  };
+}
+
+export function listContexts(env = process.env) {
+  return [existingProfile(env), ...listProfiles(env)];
+}
+
 export function validateProfileName(name) {
   if (!name) {
     throw new Error("프로필 이름을 입력하세요.");
@@ -43,6 +57,9 @@ export function ensureProfile(name, options = {}, env = process.env) {
 
   const profileHome = getProfileHome(name, env);
   const metadataFile = getProfileMetadataFile(profileHome);
+  if (fs.existsSync(profileHome) && !fs.existsSync(metadataFile)) {
+    throw new Error("이미 존재하는 외부 홈입니다. CODEX_HOME을 지정하고 @existing을 선택하세요.");
+  }
   fs.mkdirSync(profileHome, { recursive: true });
 
   if (!fs.existsSync(metadataFile)) {
@@ -82,14 +99,28 @@ export function updateProfile(name, updates, env = process.env) {
   return readProfile(name, env);
 }
 
+export function canDeleteProfile(profile, env = process.env) {
+  if (profile.name === EXISTING || !fs.existsSync(getProfileMetadataFile(profile.codexHome))) return false;
+  const target = fs.realpathSync(profile.codexHome);
+  const protectedHomes = [existingProfile(env).codexHome, path.join(env.HOME || os.homedir(), ".codex")];
+  return protectedHomes.every(home => {
+    const actual = fs.existsSync(home) ? fs.realpathSync(home) : path.resolve(home);
+    return actual !== target && !actual.startsWith(target + path.sep);
+  });
+}
+
 export function deleteProfile(name, env = process.env) {
   const profile = readProfile(name, env);
+  if (!canDeleteProfile(profile, env)) {
+    throw new Error("기존 Codex 홈 또는 관리되지 않는 홈은 삭제할 수 없습니다.");
+  }
   fs.rmSync(profile.codexHome, { recursive: true, force: true });
   clearCurrentProfileIfSelected(profile.name, env);
   return profile;
 }
 
 export function readProfile(name, env = process.env) {
+  if (name === EXISTING) return existingProfile(env);
   const profileHome = getProfileHome(name, env);
 
   if (!fs.existsSync(profileHome)) {
@@ -168,6 +199,9 @@ export function getCurrentProfile(env = process.env) {
   }
 
   const state = JSON.parse(fs.readFileSync(currentProfileFile, "utf8"));
+  if (state.name === EXISTING) {
+    return { ...existingProfile(env), codexHome: state.codexHome };
+  }
   return readProfile(state.name, env);
 }
 
@@ -183,13 +217,18 @@ function clearCurrentProfileIfSelected(name, env = process.env) {
   }
 }
 
+function usesDefaultHome(profile, env) {
+  return profile.name === EXISTING && !env.CODEX_HOME &&
+    profile.codexHome === path.resolve(env.HOME || os.homedir(), ".codex");
+}
+
 export function getCodexEnv(profile, env = process.env, codexCommand = null) {
   const commandDirectory = codexCommand ? path.dirname(codexCommand) : null;
   const pathEntries = [commandDirectory, env.PATH].filter(Boolean);
 
   return {
     ...env,
-    CODEX_HOME: profile.codexHome,
+    ...(usesDefaultHome(profile, env) ? {} : { CODEX_HOME: profile.codexHome }),
     PATH: pathEntries.join(path.delimiter),
   };
 }
@@ -229,7 +268,8 @@ export function findCodexCommand(env = process.env) {
   return null;
 }
 
-export function buildShellExport(profile) {
+export function buildShellExport(profile, env = process.env) {
+  if (usesDefaultHome(profile, env)) return "unset CODEX_HOME";
   return `export CODEX_HOME=${shellQuote(profile.codexHome)}`;
 }
 

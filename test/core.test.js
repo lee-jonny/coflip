@@ -13,6 +13,8 @@ import {
   getCurrentProfile,
   getProfileHome,
   listProfiles,
+  listContexts,
+  readProfile,
   setCurrentProfile,
   validateProfileName,
 } from "../src/core.js";
@@ -121,4 +123,40 @@ test("computes profile home without creating it", () => {
     getProfileHome("personal", env),
     path.join(env.CXS_PROFILES_DIR, "personal"),
   );
+});
+
+test("offers the inherited home without registering or deleting it", () => {
+  const env = testEnv();
+  env.CODEX_HOME = path.join(env.CXS_PROFILES_DIR, "external");
+  assert.equal(listContexts(env)[0].codexHome, env.CODEX_HOME);
+  assert.equal(fs.existsSync(env.CODEX_HOME), false);
+  fs.mkdirSync(env.CODEX_HOME, { recursive: true });
+  setCurrentProfile("@existing", env);
+  assert.equal(getCurrentProfile(env).codexHome, env.CODEX_HOME);
+  assert.throws(() => deleteProfile("@existing", env));
+  assert.throws(() => deleteProfile("external", env));
+  assert.throws(() => ensureProfile("external", {}, env));
+  assert.deepEqual(fs.readdirSync(env.CODEX_HOME), []);
+  assert.equal(readProfile("@existing", { HOME: "/test" }).codexHome, "/test/.codex");
+});
+
+test("lets Codex initialize its default home on a fresh Mac", () => {
+  const env = testEnv();
+  const context = readProfile("@existing", env);
+  assert.equal(getCodexEnv(context, env).CODEX_HOME, undefined);
+  assert.equal(buildShellExport(context, env), "unset CODEX_HOME");
+  env.CODEX_HOME = path.join(env.CXS_PROFILES_DIR, "other");
+  assert.equal(getCodexEnv(readProfile("@existing", env), env).CODEX_HOME, env.CODEX_HOME);
+  assert.equal(buildShellExport(readProfile("@existing", env), env), `export CODEX_HOME='${env.CODEX_HOME}'`);
+});
+
+test("keeps a managed home protected while it is also the inherited home", () => {
+  const env = testEnv();
+  const profile = ensureProfile("work", {}, env);
+  const alias = path.join(env.CXS_STATE_DIR, "alias");
+  fs.mkdirSync(env.CXS_STATE_DIR);
+  fs.symlinkSync(profile.codexHome, alias);
+  env.CODEX_HOME = alias;
+  assert.throws(() => deleteProfile("work", env), /삭제/);
+  assert.equal(fs.existsSync(profile.codexHome), true);
 });

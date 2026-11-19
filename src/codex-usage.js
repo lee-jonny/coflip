@@ -1,6 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 
+import { EXISTING } from "./core.js";
+import { readAccountLimits } from "./app-server.js";
+
+const pendingRefresh = new Map();
+
 export const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 
 export function getUsageStateFile(paths) {
@@ -10,10 +15,10 @@ export function getUsageStateFile(paths) {
 export function readUsageStates(paths) {
   const file = getUsageStateFile(paths);
   if (!fs.existsSync(file)) {
-    return {};
+    return Object.create(null);
   }
 
-  return JSON.parse(fs.readFileSync(file, "utf8"));
+  return Object.assign(Object.create(null), JSON.parse(fs.readFileSync(file, "utf8")));
 }
 
 export function writeUsageStates(states, paths) {
@@ -22,12 +27,17 @@ export function writeUsageStates(states, paths) {
   fs.writeFileSync(file, `${JSON.stringify(states, null, 2)}\n`);
 }
 
+function usageKey(profile) {
+  return profile.name === EXISTING ? `${EXISTING}:${profile.codexHome}` : profile.name;
+}
+
 export function getUsageState(profile, paths) {
   const states = readUsageStates(paths);
-  return normalizeState(states[profile.name], profile);
+  return normalizeState(states[usageKey(profile)], profile);
 }
 
 export function deleteUsageState(profileName, paths) {
+  pendingRefresh.delete(path.join(paths.stateDir, profileName));
   const states = readUsageStates(paths);
   if (!Object.hasOwn(states, profileName)) {
     return;
@@ -37,62 +47,62 @@ export function deleteUsageState(profileName, paths) {
   writeUsageStates(states, paths);
 }
 
-export async function refreshUsageState(profile, paths, options = {}) {
-  const states = readUsageStates(paths);
-  const previous = normalizeState(states[profile.name], profile);
-  const checkedAt = new Date().toISOString();
-  const auth = readCodexAuth(profile);
-
-  let next;
-  if (!auth) {
-    next = {
-      ...previous,
-      status: "needs-login",
-      checkedAt,
-      message: "Needs login",
-    };
-  } else {
-    try {
-      const lastKnown = await fetchCodexUsage(auth, options);
-      next = {
-        ...previous,
-        status: "ok",
-        checkedAt,
-        message: formatLastKnown(lastKnown),
-        lastKnown,
-        reason: null,
-      };
-    } catch (error) {
-      next = {
-        ...previous,
-        status: previous.lastKnown ? "last-known" : "unknown",
-        checkedAt,
-        message: previous.lastKnown ? formatLastKnown(previous.lastKnown) : "Unknown",
-        reason: sanitizeError(error),
-      };
-    }
+export async function refreshContexts(contexts, selected, paths, options) {
+  const targets = new Map(contexts.map(profile => [usageKey(profile), profile]));
+  if (selected) targets.set(usageKey(selected), selected);
+  for (const profile of targets.values()) {
+    if (fs.existsSync(profile.codexHome)) await refreshUsageState(profile, paths, options);
   }
+}
 
-  states[profile.name] = next;
+export async function refreshUsageState(profile, paths, { probe = readAccountLimits } = {}) {
+  const key = path.join(paths.stateDir, usageKey(profile));
+  const request = Symbol();
+  pendingRefresh.set(key, request);
+  let update;
+  try {
+    const { status, limits } = await probe(profile);
+    if (status === "ok" && (hasNumber(limits?.primary?.usedPercent) || hasNumber(limits?.secondary?.usedPercent))) {
+      const windows = [limits.primary, limits.secondary].filter(w => hasNumber(w?.usedPercent));
+      const remainingText = windows.map(formatRateLimit).join(" / ");
+      const lastKnown = { type: "rate-limits", primary: limits.primary, secondary: limits.secondary, remainingText };
+      update = { status, message: remainingText, lastKnown, reason: null };
+    } else {
+      const needsLogin = status === "needs-login";
+      update = { status: needsLogin ? status : "unavailable", message: needsLogin ? "Needs login" : "Unavailable", lastKnown: null, reason: null };
+    }
+  } catch (error) {
+    const previous = getUsageState(profile, paths);
+    update = {
+      status: previous.lastKnown ? "last-known" : "unavailable",
+      message: previous.lastKnown ? `Last known · ${previous.lastKnown.remainingText}` : "Unavailable",
+      reason: error.message,
+    };
+  }
+  if (pendingRefresh.get(key) !== request) return getUsageState(profile, paths);
+  pendingRefresh.delete(key);
+  const states = readUsageStates(paths);
+  const next = { ...normalizeState(states[usageKey(profile)], profile), ...update, checkedAt: new Date().toISOString() };
+  states[usageKey(profile)] = next;
   writeUsageStates(states, paths);
   return next;
 }
 
 export function recordCodexLaunch(profile, paths) {
   const states = readUsageStates(paths);
-  const previous = normalizeState(states[profile.name], profile);
+  const previous = normalizeState(states[usageKey(profile)], profile);
   const today = new Date().toISOString().slice(0, 10);
   const previousLaunchDate = previous.lastLaunchAt?.slice(0, 10);
   const launchCountToday =
     previousLaunchDate === today ? (previous.launchCountToday || 0) + 1 : 1;
 
-  states[profile.name] = {
+  states[usageKey(profile)] = {
     ...previous,
     lastLaunchAt: new Date().toISOString(),
     launchCountToday,
   };
   writeUsageStates(states, paths);
-  return states[profile.name];
+  return states[usageKey(profile)];
 }
 
 export function formatUsageMenuLabel(profile, state) {
@@ -100,6 +110,7 @@ export function formatUsageMenuLabel(profile, state) {
 }
 
 export function formatUsageDetail(state) {
+  if (state.status === "unavailable" && state.reason) return state.reason;
   if (state.checkedAt) {
     return `Updated ${formatLocalTime(state.checkedAt)}`;
   }
@@ -108,92 +119,9 @@ export function formatUsageDetail(state) {
 }
 
 export function formatUsageTrayTitle(state) {
+  if (["needs-login", "unavailable", "last-known"].includes(state.status)) return "";
   const percent = getPrimaryRemainingPercent(state);
   return percent === null ? "" : `${Math.round(percent)}%`;
-}
-
-export async function fetchCodexUsage(auth, options = {}) {
-  const fetchImpl = options.fetchImpl || globalThis.fetch;
-  if (typeof fetchImpl !== "function") {
-    throw new Error("fetch is not available");
-  }
-
-  const accessToken = auth?.tokens?.access_token;
-  if (!accessToken) {
-    throw new Error("ChatGPT access token is missing");
-  }
-
-  const baseUrl =
-    options.baseUrl ||
-    process.env.CXS_CODEX_BACKEND_URL ||
-    process.env.CODEX_SWITCHER_CODEX_BACKEND_URL ||
-    "https://chatgpt.com/backend-api";
-  const endpoints = [
-    "/api/codex/profiles/me",
-    "/api/codex/usage",
-    "/wham/usage",
-  ];
-  const errors = [];
-
-  for (const endpoint of endpoints) {
-    try {
-      const payload = await fetchJson(fetchImpl, `${baseUrl}${endpoint}`, accessToken);
-      const parsed = parseCodexUsagePayload(payload);
-      if (parsed) {
-        return {
-          ...parsed,
-          source: endpoint,
-          fetchedAt: new Date().toISOString(),
-        };
-      }
-      errors.push(`${endpoint}: no usage fields found`);
-    } catch (error) {
-      errors.push(`${endpoint}: ${sanitizeError(error)}`);
-    }
-  }
-
-  throw new Error(errors.join("; "));
-}
-
-export function parseCodexUsagePayload(payload) {
-  const rateLimits = collectObjects(payload).filter((item) => {
-    return (
-      hasNumber(item.remainingPercent) ||
-      hasNumber(item.remaining_percent) ||
-      hasNumber(item.usedPercent) ||
-      hasNumber(item.used_percent)
-    );
-  });
-
-  if (rateLimits.length > 0) {
-    const primary =
-      rateLimits.find((item) => item.primary === true) ||
-      rateLimits.find((item) => /5|hour|primary/i.test(String(item.limitName || item.limit_name || ""))) ||
-      rateLimits[0];
-    const secondary =
-      rateLimits.find((item) => item.secondary === true) ||
-      rateLimits.find((item) => item !== primary) ||
-      null;
-
-    return {
-      type: "rate-limits",
-      primary: normalizeRateLimit(primary),
-      secondary: secondary ? normalizeRateLimit(secondary) : null,
-      remainingText: formatRateLimits(primary, secondary),
-      rawRateLimitCount: rateLimits.length,
-    };
-  }
-
-  const tokenSummary = findTokenUsageSummary(payload);
-  if (tokenSummary) {
-    return {
-      type: "token-usage",
-      summary: tokenSummary,
-      remainingText: "Token usage available",
-    };
-  }
-
-  return null;
 }
 
 function normalizeState(state, profile) {
@@ -210,62 +138,6 @@ function normalizeState(state, profile) {
   };
 }
 
-function readCodexAuth(profile) {
-  const authFile = path.join(profile.codexHome, "auth.json");
-  if (!fs.existsSync(authFile)) {
-    return null;
-  }
-
-  try {
-    const auth = JSON.parse(fs.readFileSync(authFile, "utf8"));
-    return auth.tokens || auth.OPENAI_API_KEY || auth.auth_mode ? auth : null;
-  } catch {
-    return null;
-  }
-}
-
-function formatLastKnown(lastKnown) {
-  if (typeof lastKnown.remainingText === "string") {
-    return lastKnown.remainingText;
-  }
-
-  return "Last known";
-}
-
-async function fetchJson(fetchImpl, url, accessToken) {
-  const response = await fetchImpl(url, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: "application/json",
-      "User-Agent": "codex-shift",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return response.json();
-}
-
-function collectObjects(value, output = []) {
-  if (!value || typeof value !== "object") {
-    return output;
-  }
-
-  if (!Array.isArray(value)) {
-    output.push(value);
-  }
-
-  for (const child of Object.values(value)) {
-    if (child && typeof child === "object") {
-      collectObjects(child, output);
-    }
-  }
-
-  return output;
-}
-
 function normalizeRateLimit(value) {
   const remainingPercent = numberOrNull(value.remainingPercent ?? value.remaining_percent);
   const usedPercent = numberOrNull(value.usedPercent ?? value.used_percent);
@@ -277,15 +149,6 @@ function normalizeRateLimit(value) {
     resetsAt: value.resetsAt ?? value.resets_at ?? null,
     windowDurationMins: value.windowDurationMins ?? value.window_duration_mins ?? null,
   };
-}
-
-function formatRateLimits(primary, secondary) {
-  const primaryText = formatRateLimit(primary);
-  if (!secondary) {
-    return primaryText;
-  }
-
-  return `${primaryText} / ${formatRateLimit(secondary)}`;
 }
 
 function formatRateLimit(value) {
@@ -321,7 +184,7 @@ function getRemainingPercent(value) {
 }
 
 function formatReset(value) {
-  const date = new Date(value);
+  const date = new Date(typeof value === "number" ? value * 1000 : value);
   if (Number.isNaN(date.getTime())) {
     return String(value);
   }
@@ -332,29 +195,12 @@ function formatReset(value) {
   }).format(date);
 }
 
-function findTokenUsageSummary(payload) {
-  const objects = collectObjects(payload);
-  return objects.find((item) => {
-    return (
-      hasNumber(item.lifetimeTokens) ||
-      hasNumber(item.lifetime_tokens) ||
-      hasNumber(item.peakDailyTokens) ||
-      hasNumber(item.peak_daily_tokens)
-    );
-  });
-}
-
 function hasNumber(value) {
   return typeof value === "number" && Number.isFinite(value);
 }
 
 function numberOrNull(value) {
   return hasNumber(value) ? value : null;
-}
-
-function sanitizeError(error) {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/Bearer\s+[A-Za-z0-9._-]+/g, "Bearer [redacted]");
 }
 
 function formatLocalTime(value) {

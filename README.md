@@ -16,9 +16,11 @@ contexts without copying or editing auth files directly.
 npm install
 npm link
 
+cxs list
+cxs run @existing
+
+# Optional separate account contexts
 cxs add company
-cxs add personal
-cxs delete personal
 cxs add personal
 
 cxs login company
@@ -27,6 +29,20 @@ cxs login personal
 cxs run company
 cxs run personal
 ```
+
+## 세 Mac에서 사용하는 순서
+
+이 변경이 포함된 체크아웃에서 바로 시험하려면 아래 예시의 `cxs` 대신 `node bin/cxs.js`를 쓴다. 개발용 메뉴 앱은 `npm install` 후 `npm run tray`로 연다. 기존 배포 앱을 쓰는 Mac에는 새 버전을 빌드해 설치해야 메뉴가 바뀐다.
+
+1. **각 Mac에서 기존 대화 위치를 확인한다.** 터미널에서 `cxs list`를 실행하면 Mac 이름과 홈 경로가 보인다. `@existing`은 그 프로세스의 `CODEX_HOME`을 사용하고, 지정하지 않았으면 `~/.codex`를 사용한다. 기존 로그인은 `cxs run @existing -- login status`로 확인한다. Finder에서 실행한 메뉴 앱과 터미널은 환경 변수가 다를 수 있으므로 화면의 홈 경로를 비교한다.
+2. **대화를 시작한 Mac에서 재개한다.** 프로젝트 폴더에서 `cxs resume @existing` 또는 `cxs resume personal`을 실행한다. 목록이 비면 `cxs resume personal -- --all`로 같은 홈의 모든 폴더를 조회한다. 이전에 `exec`로 만든 대화라면 지원 버전에서 `--include-non-interactive`도 추가한다. 프로필 이름은 Mac마다 달라도 된다.
+3. **자주 쓰는 Mac 한 대를 실행 호스트로 정한다.** 다른 Mac에서는 메뉴의 **Continue on another Mac… → Connect with SSH…**로 원래 Mac에 접속한다. macOS의 원격 로그인과 SSH 접속이 설정되어 있어야 한다. 접속한 터미널에서 프로젝트로 이동한 뒤 그 Mac의 `cxs resume`을 실행한다. 원래 Mac은 깨어 있고 연결되어 있어야 한다.
+4. **실행 위치까지 옮길 때는 Hand off를 사용한다.** 데스크톱의 **Settings → Connections**에서 목적지를 연결하고 같은 Git 저장소를 양쪽에 프로젝트로 등록한다. 하위 폴더 프로젝트는 양쪽에서 같은 하위 경로를 사용한다. 출발지에서 대화를 재개한 뒤 CLI에 `/app`을 입력하고 대화 하단의 실행 위치에서 목적지와 **Hand off**를 선택한다. 진행 중인 응답은 중단되므로 응답이 끝난 뒤 옮기는 편이 편하다. 목적지에서 마지막 대화와 Git 상태를 확인한다. [공식 원격 연결 가이드](https://learn.chatgpt.com/docs/remote-connections)
+5. **도구를 맞춘다.** 각 Mac에서 `cxs tools @existing` 또는 `cxs tools personal`로 CLI 버전과 지원되는 플러그인 목록을 확인한다. 필요한 `plugin@marketplace` 식별자만 적어 두고 대상 홈에서 `cxs run personal -- plugin add PLUGIN@MARKETPLACE`로 설치한다. 새 대화를 열고 해당 서비스의 연결 승인을 마친다. 메뉴 앱의 **Tool setup…**에서도 조회와 설치가 가능하다. Mac 화면 조작은 **Open desktop for Computer Use → Settings → Computer use → Any App**에서 설정하고 해당 Mac에서 화면 기록과 손쉬운 사용 권한을 승인한다. [플러그인](https://learn.chatgpt.com/docs/plugins) · [Computer Use](https://learn.chatgpt.com/docs/computer-use)
+
+업무 계정은 조직이 허용한 호스트와 저장소에서 사용한다. 세 Mac을 맞추기 위해 인증 파일이나 실행 중인 홈 전체를 동기화할 필요는 없다. 한도에 도달하면 해당 계정의 재설정·크레딧 옵션을 확인한다. [조사 근거와 정책](docs/research/codex-multi-mac.md)
+
+아이콘을 다시 생성할 때는 ImageMagick 7이 필요하다. macOS에서 `brew install imagemagick`으로 설치한 뒤 프로젝트 루트에서 `npm run icons`를 실행한다. 일반 빌드는 저장소의 PNG를 사용한다.
 
 ## Menu bar app
 
@@ -73,19 +89,13 @@ Profile-specific terminal execution is also available through `cxs run`.
 
 ### Codex Usage (experimental)
 
-The tray app refreshes Codex usage state every 10 minutes and immediately after
-launching Codex from the tray. Each profile displays one of these states:
-
-```text
-Needs login
-Unknown
-Last known
-```
-
-This is intentionally separate from the OpenAI API usage/costs API. The app uses
-the selected profile's ChatGPT auth token to call Codex usage endpoints observed
-in the local Codex client. If the request or parser fails, the app keeps the last
-known parsed value when one exists and otherwise shows `Unknown`.
+The tray checks each available home's Codex App Server every ten minutes. It
+reads account status and ChatGPT rate-limit windows through `account/read`
+and `account/rateLimits/read`. Codex handles credential storage, including
+the macOS Keychain. The menu shows remaining percentages, **Needs login** for
+signed-out accounts that require authentication, and **Unavailable** for
+unsupported accounts or CLI versions. A failed refresh labels cached values
+**Last known**. [Codex App Server](https://learn.chatgpt.com/docs/app-server)
 
 For a distributable macOS build:
 
@@ -136,10 +146,12 @@ cxs path <profile>
 cxs env <profile>
 cxs login <profile>
 cxs run [profile] [-- <codex args...>]
+cxs resume [profile] [-- <resume options or session ID>]
+cxs tools [profile]
 cxs exec [profile] -- <prompt or codex exec args...>
 ```
 
-If you omit the profile for `run` or `exec`, the CLI shows a numbered profile
+If you omit the profile for `run` or `exec`, the CLI shows an interactive profile
 list in the terminal:
 
 ```sh
@@ -173,5 +185,4 @@ cxs add company
 
 - Add a Tauri menu bar app that calls this CLI core.
 - Add account labels and icons in a small settings UI.
-- Improve the experimental Codex usage parser as response shapes evolve.
 - Add shell integration helpers such as `codex-company` and `codex-personal`.
