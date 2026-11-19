@@ -294,7 +294,7 @@ function helpText() {
 
 사용법:
   cxs add <profile> [--label <name>]
-  cxs update                      Homebrew로 설치한 Codex Shift 업데이트
+  cxs update                      Homebrew로 설치한 CoFlip 업데이트
   cxs delete <profile>
   cxs list
   cxs use <profile>

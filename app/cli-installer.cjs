@@ -72,6 +72,18 @@ function installCliLauncher({ executablePath, resourcesPath, homeDir = os.homedi
   return launcherPath;
 }
 
+function refreshLegacyLauncher(executablePath, resourcesPath, homeDir = os.homedir()) {
+  const applicationsDir = path.resolve(resourcesPath, "../../..");
+  const oldContents = path.join(applicationsDir, "Codex Shift.app", "Contents");
+  const oldLauncher = buildCliLauncher(
+    path.join(oldContents, "MacOS", "Codex Shift"),
+    path.join(oldContents, "Resources", "app.asar", "bin", "cxs.js"),
+  );
+  if (readLauncher(getCliInstallPath(homeDir)) === oldLauncher) {
+    installCliLauncher({ executablePath, resourcesPath, homeDir });
+  }
+}
+
 function uninstallCliLauncher({ homeDir = os.homedir() } = {}) {
   const launcherPath = getCliInstallPath(homeDir);
 
@@ -81,7 +93,7 @@ function uninstallCliLauncher({ homeDir = os.homedir() } = {}) {
 
   if (!isCodexShiftLauncher(launcherPath)) {
     throw new Error(
-      `The cxs command at ${launcherPath} was not installed by Codex Shift.`,
+      `The cxs command at ${launcherPath} was not installed by CoFlip.`,
     );
   }
 
@@ -123,5 +135,6 @@ module.exports = {
   installZshPathSetup,
   isCliInstallDirectoryOnPath,
   isCodexShiftLauncher,
+  refreshLegacyLauncher,
   uninstallCliLauncher,
 };

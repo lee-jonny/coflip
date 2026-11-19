@@ -13,12 +13,30 @@ const {
   installZshPathSetup,
   isCliInstallDirectoryOnPath,
   isCodexShiftLauncher,
+  refreshLegacyLauncher,
   uninstallCliLauncher,
 } = require("../app/cli-installer.cjs");
 
 function testHome() {
   return fs.mkdtempSync(path.join(os.tmpdir(), "codex-shift-cli-test-"));
 }
+
+test("first launch of CoFlip repairs the previous packaged CLI path once", () => {
+  const homeDir = testHome();
+  const launcher = installCliLauncher({
+    homeDir,
+    executablePath: "/Applications/Codex Shift.app/Contents/MacOS/Codex Shift",
+    resourcesPath: "/Applications/Codex Shift.app/Contents/Resources",
+  });
+  const executable = "/Applications/CoFlip.app/Contents/MacOS/CoFlip";
+  const resources = "/Applications/CoFlip.app/Contents/Resources";
+  refreshLegacyLauncher(executable, resources, homeDir);
+  assert.equal(fs.readFileSync(launcher, "utf8"),
+    buildCliLauncher(executable, path.join(resources, "app.asar/bin/cxs.js")));
+  fs.writeFileSync(launcher, "# custom cxs");
+  refreshLegacyLauncher(executable, resources, homeDir);
+  assert.equal(fs.readFileSync(launcher, "utf8"), "# custom cxs");
+});
 
 test("installs a cxs launcher that uses the packaged Electron runtime", () => {
   const homeDir = testHome();

@@ -9,7 +9,7 @@ let core = null;
 let codexUsage = null;
 let refreshTimer = null;
 
-app.setName("Codex Shift");
+app.setName("CoFlip");
 if (process.platform === "darwin") {
   // AppKit reads these app-local defaults when it creates the status item.
   systemPreferences.registerDefaults({ NSStatusItemSpacing: 4, NSStatusItemSelectionPadding: 4 });
@@ -23,14 +23,22 @@ app.whenReady().then(async () => {
     app.dock.hide();
   }
 
+  if (app.isPackaged) {
+    try {
+      cliInstaller.refreshLegacyLauncher(process.execPath, process.resourcesPath);
+    } catch (error) {
+      console.error("Could not refresh the cxs launcher:", error);
+    }
+  }
+
   core = await import("../src/core.js");
   codexUsage = await import("../src/codex-usage.js");
   tray = new Tray(createTrayIcon());
-  tray.setToolTip("Codex Shift");
+  tray.setToolTip("CoFlip");
   rebuildMenu();
   refreshAllCodexUsage();
   refreshTimer = setInterval(refreshAllCodexUsage, codexUsage.REFRESH_INTERVAL_MS);
-  console.log("Codex Shift tray is running.");
+  console.log("CoFlip tray is running.");
   console.log("Tray bounds:", JSON.stringify(tray.getBounds()));
 });
 
@@ -142,12 +150,12 @@ async function installCxsCli() {
     buttons: ["Cancel", alreadyInstalled ? "Reinstall" : "Install"],
     defaultId: 1,
     cancelId: 0,
-    title: "Codex Shift",
+    title: "CoFlip",
     message: alreadyInstalled ? "Reinstall the cxs command?" : "Install the cxs command?",
     detail: [
-      `Codex Shift will create ${launcherPath}.`,
+      `CoFlip will create ${launcherPath}.`,
       "The command uses this app's bundled runtime, so a separate Node.js installation is not required.",
-      "If you move Codex Shift later, run this installer again.",
+      "If you move CoFlip later, run this installer again.",
     ].join("\n\n"),
   });
 
@@ -174,9 +182,9 @@ async function uninstallCxsCli() {
     buttons: ["Cancel", "Uninstall"],
     defaultId: 0,
     cancelId: 0,
-    title: "Codex Shift",
+    title: "CoFlip",
     message: "Remove the cxs command?",
-    detail: `This removes ${launcherPath}. The Codex Shift app and your profiles will stay unchanged.`,
+    detail: `This removes ${launcherPath}. The CoFlip app and your profiles will stay unchanged.`,
   });
 
   if (response !== 1) {
@@ -189,7 +197,7 @@ async function uninstallCxsCli() {
     await dialog.showMessageBox({
       type: "info",
       buttons: ["OK"],
-      title: "Codex Shift",
+      title: "CoFlip",
       message: "The cxs command was removed.",
     });
   } catch (error) {
@@ -205,7 +213,7 @@ async function showCliInstallSuccess(launcherPath) {
       ? ["Not Now", "Add to ~/.zshrc", "Copy PATH Command"]
       : ["OK"],
     defaultId: 0,
-    title: "Codex Shift",
+    title: "CoFlip",
     message: "The cxs command is installed.",
     detail: needsPathSetup
       ? [
@@ -221,7 +229,7 @@ async function showCliInstallSuccess(launcherPath) {
       await dialog.showMessageBox({
         type: "info",
         buttons: ["OK"],
-        title: "Codex Shift",
+        title: "CoFlip",
         message: "~/bin was added to ~/.zshrc.",
         detail: "Open a new Terminal window, then run cxs help.",
       });
@@ -282,7 +290,7 @@ async function deleteProfileFromPrompt(profile) {
     buttons: ["Cancel", "Delete"],
     defaultId: 0,
     cancelId: 0,
-    title: "Codex Shift",
+    title: "CoFlip",
     message: `Delete profile "${profile.name}"?`,
     detail: [
       "This removes the profile's CODEX_HOME folder and local Codex state for that profile.",
@@ -469,7 +477,7 @@ async function openAppForProfile(profile, appName) {
       buttons: ["Cancel", "Activate Existing", "Quit & Open"],
       defaultId: 1,
       cancelId: 0,
-      title: "Codex Shift",
+      title: "CoFlip",
       message: `${appName} is already running.`,
       detail: [
         `Selected on ${os.hostname()}: ${profile.codexHome}. To use this home, ${appName} needs to quit and launch again.`,
@@ -642,7 +650,7 @@ function runInTerminal(command) {
 
 function showError(error) {
   dialog.showErrorBox(
-    "Codex Shift",
+    "CoFlip",
     error instanceof Error ? error.message : String(error),
   );
 }
@@ -662,7 +670,7 @@ function updateTrayStatus() {
   const profile = getRecentProfile();
   if (!profile) {
     tray.setTitle("");
-    tray.setToolTip("Codex Shift");
+    tray.setToolTip("CoFlip");
     return;
   }
 
@@ -671,8 +679,8 @@ function updateTrayStatus() {
   tray.setTitle(title);
   tray.setToolTip(
     title
-      ? `Codex Shift · ${profile.name} · ${title}`
-      : `Codex Shift · ${profile.name} · ${usageState.message}`,
+      ? `CoFlip · ${profile.name} · ${title}`
+      : `CoFlip · ${profile.name} · ${usageState.message}`,
   );
 }
 

@@ -1,6 +1,6 @@
 {
-  "name": "codex-shift",
-  "version": "0.2.3",
+  "name": "coflip",
+  "version": "0.2.4",
   "description": "A small CLI and macOS menu bar app for switching Codex account contexts.",
   "type": "module",
   "main": "app/main.cjs",
@@ -21,7 +21,7 @@
   },
   "build": {
     "appId": "dev.codex-shift.app",
-    "productName": "Codex Shift",
+    "productName": "CoFlip",
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "app/assets/app-icon-cxs.png",

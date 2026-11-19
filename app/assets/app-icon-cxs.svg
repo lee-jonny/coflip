@@ -2,7 +2,7 @@
   <rect x="100" y="106" width="824" height="824" rx="188" fill="#101D26" opacity=".13"/>
   <rect x="100" y="98" width="824" height="824" rx="188" fill="#1B2935"/>
   <g transform="translate(242 242) scale(30)">
-  <title>Codex Shift</title>
+  <title>CoFlip</title>
   <path fill="#F3F6F5" d="M2 5h9.3L9.1 2.8l1.8-1.8 5.2 5.2a1 1 0 0 1-.7 1.7H2a.5.5 0 0 1-.5-.5V5.5A.5.5 0 0 1 2 5Z"/>
   <path fill="#78E4CC" d="M16 13H6.7l2.2 2.2L7.1 17l-5.2-5.2a1 1 0 0 1 .7-1.7H16a.5.5 0 0 1 .5.5v1.9a.5.5 0 0 1-.5.5Z"/>
 </g>
