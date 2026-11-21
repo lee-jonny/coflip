@@ -3,6 +3,7 @@ const { spawn } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
 const cliInstaller = require("./cli-installer.cjs");
+const { createUsageIcon } = require("./usage-icon.cjs");
 
 let tray = null;
 let core = null;
@@ -33,8 +34,7 @@ app.whenReady().then(async () => {
 
   core = await import("../src/core.js");
   codexUsage = await import("../src/codex-usage.js");
-  tray = new Tray(createTrayIcon());
-  tray.setToolTip("CoFlip");
+  tray = new Tray(createUsageIcon(nativeImage, []));
   rebuildMenu();
   refreshAllCodexUsage();
   refreshTimer = setInterval(refreshAllCodexUsage, codexUsage.REFRESH_INTERVAL_MS);
@@ -55,6 +55,13 @@ app.on("before-quit", () => {
 function rebuildMenu() {
   const recent = getRecentProfile();
   const profiles = core.listContexts();
+  const usage = codexUsage.getTrayUsage(profiles, core.getPaths());
+  tray.setImage(createUsageIcon(nativeImage, usage));
+  tray.setToolTip([
+    "CoFlip · 기본 한도 잔여량",
+    ...usage.map(({ profile, percent }) => `${profileLabel(profile)} · ${Math.round(percent)}%`),
+  ].join("\n"));
+
   const recentIndex = profiles.findIndex(
     (profile) => profile.name === recent?.name && profile.codexHome === recent.codexHome,
   );
@@ -740,13 +747,6 @@ function showError(error) {
     "CoFlip",
     error instanceof Error ? error.message : String(error),
   );
-}
-
-function createTrayIcon() {
-  const iconPath = path.join(__dirname, "assets", "tray-iconTemplate.png");
-  const image = nativeImage.createFromPath(iconPath);
-  image.setTemplateImage(true);
-  return image;
 }
 
 function getRecentProfile() {

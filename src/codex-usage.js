@@ -36,6 +36,20 @@ export function getUsageState(profile, paths) {
   return normalizeState(states[usageKey(profile)], profile);
 }
 
+export function getTrayUsage(profiles, paths) {
+  const states = readUsageStates(paths);
+  return profiles
+    .flatMap((profile) => {
+      const state = states[usageKey(profile)];
+      if (state?.status !== "ok") return [];
+      const percent = getPrimaryRemainingPercent(state);
+      if (percent === null) return [];
+      return [{ profile, percent, lastLaunchAt: state.lastLaunchAt ?? "" }];
+    })
+    .sort((first, second) => second.lastLaunchAt.localeCompare(first.lastLaunchAt))
+    .slice(0, 2);
+}
+
 export function deleteUsageState(profileName, paths) {
   pendingRefresh.delete(path.join(paths.stateDir, profileName));
   const states = readUsageStates(paths);
