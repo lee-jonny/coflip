@@ -60,9 +60,11 @@ npm run tray
 
 메뉴 막대의 `cxs` 아이콘 아래에 프로필별 기본 한도 잔여량이 막대로 표시된다. 최신 수치가 있는 프로필 중 최근에 연 두 개까지 위에서부터 표시한다. 아이콘에 마우스를 올리면 막대 순서대로 프로필 이름과 잔여율을 확인할 수 있다. 아이콘을 누른 다음 하려는 일을 고른다.
 
+Codex 데스크톱 앱이 없는 Mac에서는 **사용량**, **설정**, **종료**를 표시한다. **설정 → 터미널 바로가기 표시**를 켜면 **대화 이어서**와 **새 대화**를 추가할 수 있다. 데스크톱 앱 설치 여부는 CoFlip을 열 때 확인한다.
+
 - **대화 이어서 → 프로필**에서 이 Mac의 이전 대화를 연다. 작업 폴더가 정해졌다면 **폴더에서 이어서…**, 다른 Mac에 저장된 대화라면 **다른 Mac에서 이어서…**를 선택한다.
 - **Codex 앱 열기**는 선택한 프로필로 데스크톱을 연다. **새 대화**는 폴더를 선택하고 터미널에서 시작한다. 프로필이 하나면 두 항목은 프로필을 추가로 묻지 않는다.
-- **사용량 → 프로필**에서 잔여량, 시간 범위, 확인 시각을 본다. 같은 Codex 홈을 가리키는 항목은 모든 메뉴에서 한 번만 표시한다. 관리 프로필이 같은 홈을 가리키면 그 프로필 이름을 사용한다.
+- **사용량 → 프로필**에서 잔여량, 시간 범위, 확인 시각을 본다. 같은 Codex 홈을 가리키는 항목은 모든 메뉴에서 한 번만 표시한다. 관리 프로필이 같은 홈을 가리키면 그 프로필 이름을 사용한다. 다른 프로필이 있을 때 **설정 → 기본 Codex 사용량 숨기기**를 켜면 기본 프로필이 사용량 메뉴와 잔여량 바에서 빠진다.
 - **기본 Codex**는 `~/.codex`를, **환경 지정 프로필**은 CoFlip에 따로 설정된 `CODEX_HOME`을 가리킨다.
 - **설정 → 프로필 관리…**에서 프로필 경로를 확인하거나 로그인, 도구 설정, 삭제를 할 수 있다. 새 프로필 추가와 `cxs` 설치도 **설정**에 있다. 실행 중인 CoFlip 버전은 **설정** 맨 아래에서 확인한다.
 
@@ -102,11 +104,18 @@ npm run pack:mac
 Apple Silicon Mac에서 Homebrew로 설치하려면 아래 명령을 한 번 실행한다. DMG로 설치한 기존 앱이 있으면 먼저 종료하고 기존 `/Applications/Codex Shift.app`을 다른 폴더로 옮긴다. 프로필은 앱 외부에 저장된다.
 
 ```sh
-brew tap willofi/codex-shift https://github.com/willofi/coflip.git
-brew install --cask willofi/codex-shift/codex-shift
+brew tap lee-jonny/coflip https://github.com/lee-jonny/coflip.git
+brew install --cask lee-jonny/coflip/codex-shift
 ```
 
-v0.2.3에서 업데이트한 경우 CoFlip을 한 번 열어 기존 CLI 실행 경로를 갱신한다. 앱 메뉴에서 **설정 → cxs 설치…**를 선택한 뒤 새 터미널에서 `cxs update`를 실행하면 Homebrew가 최신 릴리스를 확인하고 앱을 교체한다. 실행 중이었다면 다시 열어 새 버전을 사용한다. CLI 설치 없이도 `brew update && brew upgrade --cask willofi/codex-shift/codex-shift`를 쓸 수 있다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/willofi/coflip/releases/latest)에서 받는다.
+기존 `willofi/codex-shift` tap에서 설치한 Mac은 CoFlip을 종료하고 새 tap을 등록한 뒤 새 출처로 업그레이드한다. 이미 같은 버전이면 `brew reinstall --cask lee-jonny/coflip/codex-shift`로 출처를 바꾼다. `brew list --cask --full-name`에 새 출처가 표시된 뒤 예전 tap을 제거할 수 있다.
+
+```sh
+brew tap lee-jonny/coflip https://github.com/lee-jonny/coflip.git
+brew upgrade --cask lee-jonny/coflip/codex-shift
+```
+
+기존 tap을 계속 쓰려면 원격 URL만 `brew tap --custom-remote willofi/codex-shift https://github.com/lee-jonny/coflip.git`로 갱신한다. v0.4.3 이상에서 `cxs update`는 설치된 cask의 출처를 사용한다. `cxs`를 쓰려면 **설정 → cxs 설치…**를 선택한다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/lee-jonny/coflip/releases/latest)에서 받는다.
 
 This project is currently distributed without an Apple Developer ID certificate
 or Apple notarization. macOS therefore marks the app as quarantined after it is

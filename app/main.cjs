@@ -1,5 +1,5 @@
 const { app, clipboard, dialog, Menu, nativeImage, shell, systemPreferences, Tray } = require("electron");
-const { spawn } = require("node:child_process");
+const { execFile, spawn } = require("node:child_process");
 const os = require("node:os");
 const path = require("node:path");
 const cliInstaller = require("./cli-installer.cjs");
@@ -10,6 +10,10 @@ let core = null;
 let codexUsage = null;
 let refreshTimer = null;
 let terminalLaunchWatcher = null;
+let hasCodexDesktop = false;
+
+const SHOW_TERMINAL_SHORTCUTS = "CoFlipShowTerminalShortcuts";
+const HIDE_INHERITED_USAGE = "CoFlipHideInheritedUsage";
 
 app.setName("CoFlip");
 if (process.platform === "darwin") {
@@ -35,6 +39,7 @@ app.whenReady().then(async () => {
 
   core = await import("../src/core.js");
   codexUsage = await import("../src/codex-usage.js");
+  hasCodexDesktop = await isCodexDesktopInstalled(getCodexAppName());
   tray = new Tray(createUsageIcon(nativeImage, []));
   rebuildMenu();
   try {
@@ -71,44 +76,26 @@ app.on("before-quit", () => {
 function rebuildMenu() {
   const rows = codexUsage.getUsageOverview(core.listContexts(), core.getPaths(), getRecentProfile());
   const profiles = rows.map(({ profile }) => profile);
-  const usage = rows.filter(({ percent }) => percent !== null).slice(0, 2);
+  const inheritedProfile = profiles.find(({ name }) => name === core.EXISTING);
+  const canHideInheritedUsage = Boolean(inheritedProfile && profiles.length > 1);
+  const hideInheritedUsage = canHideInheritedUsage && menuPreference(HIDE_INHERITED_USAGE);
+  const usageRows = hideInheritedUsage
+    ? rows.filter(({ profile }) => profile.name !== core.EXISTING)
+    : rows;
+  const usage = usageRows.filter(({ percent }) => percent !== null).slice(0, 2);
   tray.setImage(createUsageIcon(nativeImage, usage));
   tray.setToolTip([
     "CoFlip · 기본 한도 잔여량",
     ...usage.map(({ profile, percent }) => `${profileLabel(profile)} · ${Math.round(percent)}%`),
   ].join("\n"));
 
-  const resume = (profile) => openTerminal(profile, ["resume", "--all"]);
-  const openApp = (profile) => openAppForProfile(profile, getCodexAppName());
-  const startChat = (profile) => pickFolderAndRun(profile, []);
-
+  const showShortcuts = hasCodexDesktop || menuPreference(SHOW_TERMINAL_SHORTCUTS);
   const items = [
-    {
-      label: "대화 이어서",
-      submenu: [
-        ...profileMenuItems(profiles, resume),
-        { type: "separator" },
-        {
-          label: "폴더에서 이어서…",
-          click: () => withChosenProfile(profiles, (profile) => pickFolderAndRun(profile, ["resume"])).catch(showError),
-        },
-        {
-          label: "다른 Mac에서 이어서…",
-          click: () => continueElsewhere(profiles).catch(showError),
-        },
-      ],
-    },
-    profiles.length === 1
-      ? { label: "Codex 앱 열기", click: () => openApp(profiles[0]).catch(showError) }
-      : { label: "Codex 앱 열기", submenu: profileMenuItems(profiles, openApp) },
-    profiles.length === 1
-      ? { label: "새 대화…", click: () => startChat(profiles[0]).catch(showError) }
-      : { label: "새 대화", submenu: profileMenuItems(profiles, startChat, "…") },
-    { type: "separator" },
+    ...(showShortcuts ? [...workMenu(profiles), { type: "separator" }] : []),
     {
       label: "사용량",
       submenu: [
-        ...rows.map(({ profile, state, percent }) => ({
+        ...usageRows.map(({ profile, state, percent }) => ({
           label: `${profileLabel(profile)} · ${usageSummary(state, percent)}`,
           click: () => showUsage(profile, state).catch(showError),
         })),
@@ -116,10 +103,44 @@ function rebuildMenu() {
         { label: "새로 고침", click: refreshAllCodexUsage },
       ],
     },
-    { label: "설정", submenu: settingsMenu(profiles) },
+    { label: "설정", submenu: settingsMenu(profiles, canHideInheritedUsage ? inheritedProfile : null) },
     { label: "종료", click: () => app.quit() },
   ];
   tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+function workMenu(profiles) {
+  const resume = (profile) => openTerminal(profile, ["resume", "--all"]);
+  const startChat = (profile) => pickFolderAndRun(profile, []);
+  const openApp = (profile) => openAppForProfile(profile, getCodexAppName());
+  const items = [{
+    label: "대화 이어서",
+    submenu: [
+      ...profileMenuItems(profiles, resume),
+      { type: "separator" },
+      {
+        label: "폴더에서 이어서…",
+        click: () => withChosenProfile(profiles, (profile) => pickFolderAndRun(profile, ["resume"])).catch(showError),
+      },
+      {
+        label: "다른 Mac에서 이어서…",
+        click: () => continueElsewhere(profiles).catch(showError),
+      },
+    ],
+  }];
+  if (hasCodexDesktop) {
+    items.push(profiles.length === 1
+      ? { label: "Codex 앱 열기", click: () => openApp(profiles[0]).catch(showError) }
+      : { label: "Codex 앱 열기", submenu: profileMenuItems(profiles, openApp) });
+  }
+  items.push(profiles.length === 1
+    ? { label: "새 대화…", click: () => startChat(profiles[0]).catch(showError) }
+    : { label: "새 대화", submenu: profileMenuItems(profiles, startChat, "…") });
+  return items;
+}
+
+function menuPreference(key) {
+  return process.platform === "darwin" && systemPreferences.getUserDefault(key, "boolean");
 }
 
 function profileLabel(profile) {
@@ -172,7 +193,7 @@ async function showUsage(profile, state) {
   if (response === 1) runCodexLogin(profile);
 }
 
-function settingsMenu(profiles) {
+function settingsMenu(profiles, inheritedProfile) {
   const settings = [
     { label: "새 프로필…", click: createProfileFromPrompt },
     {
@@ -207,11 +228,31 @@ function settingsMenu(profiles) {
       });
     }
   }
+  if (process.platform === "darwin") {
+    if (!hasCodexDesktop) {
+      settings.push(menuPreferenceItem("터미널 바로가기 표시", SHOW_TERMINAL_SHORTCUTS));
+    }
+    if (inheritedProfile) {
+      settings.push(menuPreferenceItem(`${profileLabel(inheritedProfile)} 사용량 숨기기`, HIDE_INHERITED_USAGE));
+    }
+  }
   settings.push(
     { type: "separator" },
     { label: `CoFlip v${app.getVersion()}`, enabled: false },
   );
   return settings;
+}
+
+function menuPreferenceItem(label, key) {
+  return {
+    label,
+    type: "checkbox",
+    checked: menuPreference(key),
+    click: ({ checked }) => {
+      systemPreferences.setUserDefault(key, "boolean", checked);
+      rebuildMenu();
+    },
+  };
 }
 
 async function manageProfile(profile) {
@@ -562,7 +603,7 @@ async function toolSetup(profile) {
     ...(tools.canList ? [["List plugins", ["plugin", "list"]]] : []),
     ...(tools.canAdd ? [["Install plugin…", ["plugin", "add"]]] : []),
     ...(tools.cliUnavailable ? [] : [["Login status", ["login", "status"]]]),
-    ["Open desktop for Computer Use", null],
+    ...(hasCodexDesktop ? [["Open desktop for Computer Use", null]] : []),
     ["Computer Use guide", null],
     ["Close", null],
   ];
@@ -664,6 +705,19 @@ function handleOpenProcess(child, appName) {
         ),
       );
     }
+  });
+}
+
+function isCodexDesktopInstalled(appName) {
+  if (process.platform !== "darwin") return Promise.resolve(false);
+  const script = `function run(argv) {
+    ObjC.import("AppKit");
+    return ObjC.unwrap($.NSWorkspace.sharedWorkspace.fullPathForApplication(argv[0])) || "";
+  }`;
+  return new Promise((resolve) => {
+    execFile("/usr/bin/osascript", ["-l", "JavaScript", "-e", script, appName], { timeout: 2000 }, (error, stdout) => {
+      resolve(!error && Boolean(stdout.trim()));
+    });
   });
 }
 

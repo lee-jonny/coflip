@@ -32,15 +32,7 @@ export async function main(argv, env = process.env) {
       addProfile(rest, env);
       return;
     case "update":
-      for (const args of [["update"], ["upgrade", "--cask", "willofi/codex-shift/codex-shift"]]) {
-        const result = spawnSync("brew", args, { stdio: "inherit", env });
-        if (result.error?.code === "ENOENT") throw new Error("Homebrew가 필요합니다. README의 Homebrew 설치 절차를 확인하세요.");
-        if (result.error) throw result.error;
-        if (result.status !== 0) {
-          process.exitCode = result.status ?? 1;
-          break;
-        }
-      }
+      updateWithHomebrew(env);
       return;
     case "delete":
     case "remove":
@@ -87,6 +79,28 @@ export async function main(argv, env = process.env) {
     default:
       throw new Error(`알 수 없는 명령입니다: ${command}\n\n${helpText()}`);
   }
+}
+
+function updateWithHomebrew(env) {
+  const runBrew = (args, stdio = "inherit") => {
+    const result = spawnSync("brew", args, { stdio, env, encoding: "utf8" });
+    if (result.error?.code === "ENOENT") throw new Error("Homebrew가 필요합니다. README의 설치 절차를 확인하세요.");
+    if (result.error) throw result.error;
+    if (result.status !== 0) process.exitCode = result.status ?? 1;
+    return result;
+  };
+
+  if (runBrew(["update"]).status !== 0) return;
+  const installed = runBrew(["list", "--cask", "--full-name"], ["ignore", "pipe", "inherit"]);
+  if (installed.status !== 0) return;
+
+  const supportedCasks = new Set([
+    "lee-jonny/coflip/codex-shift",
+    "willofi/codex-shift/codex-shift",
+  ]);
+  const cask = installed.stdout.split(/\r?\n/).find(name => supportedCasks.has(name.trim()))?.trim();
+  if (!cask) throw new Error("Homebrew에서 설치한 CoFlip을 찾을 수 없습니다. README의 설치 절차를 확인하세요.");
+  runBrew(["upgrade", "--cask", cask]);
 }
 
 function addProfile(args, env) {
