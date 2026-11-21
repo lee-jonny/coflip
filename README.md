@@ -105,17 +105,21 @@ Apple Silicon Mac에서 Homebrew로 설치하려면 아래 명령을 한 번 실
 
 ```sh
 brew tap lee-jonny/coflip https://github.com/lee-jonny/coflip.git
-brew install --cask lee-jonny/coflip/codex-shift
+brew install --cask lee-jonny/coflip/coflip
 ```
 
-기존 `willofi/codex-shift` tap에서 설치한 Mac은 CoFlip을 종료하고 새 tap을 등록한 뒤 새 출처로 업그레이드한다. 이미 같은 버전이면 `brew reinstall --cask lee-jonny/coflip/codex-shift`로 출처를 바꾼다. `brew list --cask --full-name`에 새 출처가 표시된 뒤 예전 tap을 제거할 수 있다.
+v0.4.3 이하에서 `codex-shift` cask로 설치한 경우, CoFlip을 종료하고 Homebrew에서 설치 기록을 새 이름으로 이전한 뒤 업데이트한다. 이미 `lee-jonny/coflip` tap을 등록했다면 첫 줄은 생략한다. 이전 `willofi/codex-shift` tap 때문에 `brew update`가 리디렉션 오류로 멈추면 `brew tap --custom-remote willofi/codex-shift https://github.com/lee-jonny/coflip.git`으로 원격 주소를 갱신한 뒤 다시 실행한다.
 
 ```sh
 brew tap lee-jonny/coflip https://github.com/lee-jonny/coflip.git
-brew upgrade --cask lee-jonny/coflip/codex-shift
+brew update
+brew migrate --cask lee-jonny/coflip/coflip
+HOMEBREW_NO_AUTO_UPDATE=1 brew upgrade --cask lee-jonny/coflip/coflip
 ```
 
-기존 tap을 계속 쓰려면 원격 URL만 `brew tap --custom-remote willofi/codex-shift https://github.com/lee-jonny/coflip.git`로 갱신한다. v0.4.3 이상에서 `cxs update`는 설치된 cask의 출처를 사용한다. `cxs`를 쓰려면 **설정 → cxs 설치…**를 선택한다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/lee-jonny/coflip/releases/latest)에서 받는다.
+`brew list --cask --full-name`에 `lee-jonny/coflip/coflip`이 표시되면 기존 `willofi/codex-shift` tap이 남아 있는 경우 `brew untap willofi/codex-shift`로 정리할 수 있다. CoFlip을 다시 열고 **설정**에서 버전을 확인한다.
+
+이후에는 `cxs update`를 사용한다. `cxs`를 쓰려면 **설정 → cxs 설치…**를 선택한다. 수동 설치용 DMG는 [최신 릴리스](https://github.com/lee-jonny/coflip/releases/latest)에서 받는다.
 
 This project is currently distributed without an Apple Developer ID certificate
 or Apple notarization. macOS therefore marks the app as quarantined after it is

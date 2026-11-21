@@ -95,7 +95,9 @@ function updateWithHomebrew(env) {
   if (installed.status !== 0) return;
 
   const supportedCasks = new Set([
+    "lee-jonny/coflip/coflip",
     "lee-jonny/coflip/codex-shift",
+    "willofi/codex-shift/coflip",
     "willofi/codex-shift/codex-shift",
   ]);
   const cask = installed.stdout.split(/\r?\n/).find(name => supportedCasks.has(name.trim()))?.trim();
