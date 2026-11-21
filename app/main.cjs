@@ -9,6 +9,7 @@ let tray = null;
 let core = null;
 let codexUsage = null;
 let refreshTimer = null;
+let terminalLaunchWatcher = null;
 
 app.setName("CoFlip");
 if (process.platform === "darwin") {
@@ -36,6 +37,20 @@ app.whenReady().then(async () => {
   codexUsage = await import("../src/codex-usage.js");
   tray = new Tray(createUsageIcon(nativeImage, []));
   rebuildMenu();
+  try {
+    terminalLaunchWatcher = codexUsage.watchTerminalLaunches(core.getPaths(), () => {
+      try {
+        rebuildMenu();
+      } catch (error) {
+        console.error("Could not update the tray after a terminal launch:", error);
+      }
+    });
+    terminalLaunchWatcher.on("error", (error) => {
+      console.error("Could not watch terminal launches:", error);
+    });
+  } catch (error) {
+    console.error("Could not watch terminal launches:", error);
+  }
   refreshAllCodexUsage();
   refreshTimer = setInterval(refreshAllCodexUsage, codexUsage.REFRESH_INTERVAL_MS);
   console.log("CoFlip tray is running.");
@@ -47,6 +62,7 @@ app.on("window-all-closed", (event) => {
 });
 
 app.on("before-quit", () => {
+  terminalLaunchWatcher?.close();
   if (refreshTimer) {
     clearInterval(refreshTimer);
   }

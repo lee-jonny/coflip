@@ -4,12 +4,14 @@ import {
   ensureProfile,
   getCurrentProfile,
   getProfileHome,
+  getPaths,
   listContexts,
   EXISTING,
   readProfile,
   runCodex,
   setCurrentProfile,
 } from "./core.js";
+import { deleteTerminalLaunch, recordTerminalLaunch } from "./codex-usage.js";
 import { inspectTools } from "./tools.js";
 import fs from "node:fs";
 import { spawnSync } from "node:child_process";
@@ -115,6 +117,7 @@ function useProfile(args, env) {
 function deleteProfileCommand(args, env) {
   const profileName = requireProfileName(args);
   const profile = deleteProfile(profileName, env);
+  deleteTerminalLaunch(profile, getPaths(env));
   console.log(`프로필을 삭제했습니다: ${profile.name}`);
   console.log(`삭제된 CODEX_HOME=${profile.codexHome}`);
 }
@@ -152,7 +155,13 @@ async function run(args, env, prefix = []) {
   const { profileName, commandArgs } = await parseRunArgs(args, env);
   const profile = readProfile(profileName, env);
   setCurrentProfile(profile.name, env);
-  const exitCode = await runCodex(profile, [...prefix, ...commandArgs], env);
+  const exitCode = await runCodex(profile, [...prefix, ...commandArgs], env, () => {
+    try {
+      recordTerminalLaunch(profile, getPaths(env));
+    } catch (error) {
+      console.error(`최근 실행 기록을 저장하지 못했습니다. ${error.message}`);
+    }
+  });
   process.exitCode = exitCode;
 }
 

@@ -3,6 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 
 import {
   deleteUsageState,
@@ -11,12 +13,14 @@ import {
   formatUsageMenuLabel,
   formatUsageTrayTitle,
   getUsageState,
+  getTrayUsage,
+  writeUsageStates,
   recordCodexLaunch,
   refreshUsageState,
   refreshContexts,
 } from "../src/codex-usage.js";
 
-import { getCodexEnv, getCurrentProfile, listContexts, setCurrentProfile } from "../src/core.js";
+import { ensureProfile, getPaths, getCodexEnv, getCurrentProfile, listContexts, setCurrentProfile } from "../src/core.js";
 
 function testPaths() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-usage-test-"));
@@ -196,4 +200,30 @@ test("refreshes the CLI-selected external home even when the tray runs in the de
   queried.length = 0;
   await refreshContexts(contexts, contexts[0], paths, { probe });
   assert.deepEqual(queried, [undefined]);
+});
+
+test("orders the tray by CLI and GUI launches without changing the usage cache", () => {
+  const { root, stateDir } = testPaths();
+  const codex = path.join(root, "codex");
+  fs.writeFileSync(codex, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+  const env = {
+    ...process.env,
+    CXS_STATE_DIR: stateDir,
+    CXS_PROFILES_DIR: path.join(root, "profiles"),
+    CXS_CODEX_PATH: codex,
+  };
+  const paths = getPaths(env);
+  const profiles = ["work", "personal", "third"].map(name => ensureProfile(name, {}, env));
+  const states = Object.fromEntries(profiles.map((profile, index) => [profile.name, {
+    status: "ok",
+    lastLaunchAt: new Date(3000 - index * 1000).toISOString(),
+    lastKnown: { type: "rate-limits", primary: { usedPercent: 25 } },
+  }]));
+  writeUsageStates(states, paths);
+
+  const cli = fileURLToPath(new URL("../bin/cxs.js", import.meta.url));
+  const result = spawnSync(process.execPath, [cli, "resume", "third", "--", "--all"], { env, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(getTrayUsage(profiles, paths).map(({ profile }) => profile.name), ["third", "work"]);
+  assert.equal(getUsageState(profiles[2], paths).lastLaunchAt, states.third.lastLaunchAt);
 });

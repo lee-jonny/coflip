@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 
 import { EXISTING } from "./core.js";
 import { readAccountLimits } from "./app-server.js";
@@ -31,6 +32,31 @@ function usageKey(profile) {
   return profile.name === EXISTING ? `${EXISTING}:${profile.codexHome}` : profile.name;
 }
 
+function terminalLaunchDirectory(paths) {
+  return path.join(paths.stateDir, "terminal-launches");
+}
+
+function terminalLaunchFile(profile, paths) {
+  const key = createHash("sha256").update(usageKey(profile)).digest("hex");
+  return path.join(terminalLaunchDirectory(paths), key);
+}
+
+export function recordTerminalLaunch(profile, paths) {
+  // One file per profile prevents a CLI launch from overwriting the tray's usage cache.
+  fs.mkdirSync(terminalLaunchDirectory(paths), { recursive: true });
+  fs.writeFileSync(terminalLaunchFile(profile, paths), "");
+}
+
+export function deleteTerminalLaunch(profile, paths) {
+  fs.rmSync(terminalLaunchFile(profile, paths), { force: true });
+}
+
+export function watchTerminalLaunches(paths, onChange) {
+  const directory = terminalLaunchDirectory(paths);
+  fs.mkdirSync(directory, { recursive: true });
+  return fs.watch(directory, onChange);
+}
+
 export function getUsageState(profile, paths) {
   const states = readUsageStates(paths);
   return normalizeState(states[usageKey(profile)], profile);
@@ -44,13 +70,16 @@ export function getTrayUsage(profiles, paths) {
       if (state?.status !== "ok") return [];
       const percent = getPrimaryRemainingPercent(state);
       if (percent === null) return [];
-      return [{ profile, percent, lastLaunchAt: state.lastLaunchAt ?? "" }];
+      const terminalLaunch = fs.statSync(terminalLaunchFile(profile, paths), { throwIfNoEntry: false });
+      const lastLaunchAt = Math.max(Date.parse(state.lastLaunchAt) || 0, terminalLaunch?.mtimeMs ?? 0);
+      return [{ profile, percent, lastLaunchAt }];
     })
-    .sort((first, second) => second.lastLaunchAt.localeCompare(first.lastLaunchAt))
+    .sort((first, second) => second.lastLaunchAt - first.lastLaunchAt)
     .slice(0, 2);
 }
 
 export function deleteUsageState(profileName, paths) {
+  deleteTerminalLaunch({ name: profileName }, paths);
   pendingRefresh.delete(path.join(paths.stateDir, profileName));
   const states = readUsageStates(paths);
   if (!Object.hasOwn(states, profileName)) {

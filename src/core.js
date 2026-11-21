@@ -273,7 +273,7 @@ export function buildShellExport(profile, env = process.env) {
   return `export CODEX_HOME=${shellQuote(profile.codexHome)}`;
 }
 
-export function runCodex(profile, args, env = process.env) {
+export function runCodex(profile, args, env = process.env, onSpawn) {
   return new Promise((resolve, reject) => {
     const command = findCodexCommand(env);
     if (!command) {
@@ -286,6 +286,7 @@ export function runCodex(profile, args, env = process.env) {
       stdio: "inherit",
     });
 
+    if (onSpawn) child.once("spawn", onSpawn);
     child.on("error", reject);
     child.on("exit", (code, signal) => {
       if (signal) {
