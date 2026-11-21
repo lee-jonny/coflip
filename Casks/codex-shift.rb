@@ -1,6 +1,6 @@
 cask "codex-shift" do
-  version "0.4.0"
-  sha256 "0e23b151b1e4e823545c6878e351dd12a5f355937a7e071b5cf25996782eb49b"
+  version "0.4.1"
+  sha256 "257a5ffee0d5954d4b247555bba49da3114c39f073503d98c547380abbf6dde3"
 
   url "https://github.com/willofi/coflip/releases/download/v#{version}/CoFlip-#{version}-arm64.dmg"
   name "CoFlip"
