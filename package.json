@@ -1,6 +1,6 @@
 {
   "name": "coflip",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "A small CLI and macOS menu bar app for switching Codex account contexts.",
   "type": "module",
   "main": "app/main.cjs",
