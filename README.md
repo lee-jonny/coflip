@@ -113,6 +113,7 @@ v0.4.3 이하에서 `codex-shift` cask로 설치한 경우, CoFlip을 종료하�
 ```sh
 brew tap lee-jonny/coflip https://github.com/lee-jonny/coflip.git
 brew update
+brew trust --cask lee-jonny/coflip/coflip
 brew migrate --cask lee-jonny/coflip/coflip
 HOMEBREW_NO_AUTO_UPDATE=1 brew upgrade --cask lee-jonny/coflip/coflip
 ```
