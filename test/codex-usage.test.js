@@ -13,7 +13,7 @@ import {
   formatUsageMenuLabel,
   formatUsageTrayTitle,
   getUsageState,
-  getTrayUsage,
+  getUsageOverview,
   writeUsageStates,
   recordCodexLaunch,
   refreshUsageState,
@@ -224,6 +224,46 @@ test("orders the tray by CLI and GUI launches without changing the usage cache",
   const cli = fileURLToPath(new URL("../bin/cxs.js", import.meta.url));
   const result = spawnSync(process.execPath, [cli, "resume", "third", "--", "--all"], { env, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(getTrayUsage(profiles, paths).map(({ profile }) => profile.name), ["third", "work"]);
+  assert.deepEqual(getUsageOverview(profiles, paths).map(({ profile }) => profile.name), ["third", "work", "personal"]);
   assert.equal(getUsageState(profiles[2], paths).lastLaunchAt, states.third.lastLaunchAt);
+});
+
+test("lists a shared Codex home once and keeps alias launch history", async () => {
+  const paths = testPaths();
+  const env = { CXS_STATE_DIR: paths.stateDir, CXS_PROFILES_DIR: path.join(paths.root, "profiles") };
+  const work = ensureProfile("work", {}, env);
+  const personal = ensureProfile("personal", {}, env);
+  const alias = path.join(paths.root, "alias");
+  fs.symlinkSync(work.codexHome, alias, "dir");
+  const contexts = listContexts({ ...env, CODEX_HOME: alias });
+  const existing = contexts[0];
+  const limits = { type: "rate-limits", primary: { usedPercent: 25 } };
+  writeUsageStates({
+    [`@existing:${alias}`]: {
+      status: "ok",
+      checkedAt: "2026-11-21T08:00:00Z",
+      lastLaunchAt: "2026-11-21T08:00:00Z",
+      lastKnown: limits,
+    },
+    personal: {
+      status: "ok",
+      checkedAt: "2026-11-21T07:00:00Z",
+      lastLaunchAt: "2026-11-21T07:00:00Z",
+      lastKnown: limits,
+    },
+  }, paths);
+
+  const summarize = (profiles, selected) => getUsageOverview(profiles, paths, selected)
+    .map(({ profile, percent }) => [profile.name, percent]);
+  assert.deepEqual(summarize(contexts), [["work", 75], ["personal", 75]]);
+  assert.deepEqual(summarize([personal, work], existing), [["work", 75], ["personal", 75]]);
+
+  const queried = [];
+  await refreshContexts(contexts, existing, paths, {
+    probe: async (profile) => {
+      queried.push(profile.name);
+      return { status: "ok", limits: { primary: { usedPercent: 25 } } };
+    },
+  });
+  assert.deepEqual(queried, ["work", "personal"]);
 });

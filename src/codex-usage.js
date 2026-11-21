@@ -62,20 +62,47 @@ export function getUsageState(profile, paths) {
   return normalizeState(states[usageKey(profile)], profile);
 }
 
-export function getTrayUsage(profiles, paths) {
+function groupProfilesByHome(profiles) {
+  const groups = new Map();
+  for (const profile of profiles) {
+    let home = path.resolve(profile.codexHome);
+    try {
+      home = fs.realpathSync.native(home);
+    } catch {
+      // An uninitialized home can still appear in the menu.
+    }
+    const aliases = groups.get(home) ?? new Map();
+    aliases.set(usageKey(profile), profile);
+    groups.set(home, aliases);
+  }
+  return Array.from(groups.values(), aliases => {
+    const profiles = [...aliases.values()];
+    const profile = profiles.find(candidate => candidate.name !== EXISTING) ?? profiles[0];
+    return { profile, aliases: profiles };
+  });
+}
+
+export function getUsageOverview(profiles, paths, selected) {
   const states = readUsageStates(paths);
-  return profiles
-    .flatMap((profile) => {
-      const state = states[usageKey(profile)];
-      if (state?.status !== "ok") return [];
-      const percent = getPrimaryRemainingPercent(state);
-      if (percent === null) return [];
-      const terminalLaunch = fs.statSync(terminalLaunchFile(profile, paths), { throwIfNoEntry: false });
-      const lastLaunchAt = Math.max(Date.parse(state.lastLaunchAt) || 0, terminalLaunch?.mtimeMs ?? 0);
-      return [{ profile, percent, lastLaunchAt }];
+  const visible = new Set(profiles.map(usageKey));
+  const candidates = selected ? [...profiles, selected] : profiles;
+  return groupProfilesByHome(candidates)
+    .filter(({ aliases }) => aliases.some(alias => visible.has(usageKey(alias))))
+    .map(({ profile, aliases }) => {
+      let state = normalizeState(states[usageKey(profile)], profile);
+      let lastLaunchAt = 0;
+      for (const alias of aliases) {
+        const aliasState = states[usageKey(alias)];
+        if (aliasState?.checkedAt && (!state.checkedAt || aliasState.checkedAt > state.checkedAt)) {
+          state = normalizeState(aliasState, profile);
+        }
+        const terminal = fs.statSync(terminalLaunchFile(alias, paths), { throwIfNoEntry: false });
+        lastLaunchAt = Math.max(lastLaunchAt, Date.parse(aliasState?.lastLaunchAt) || 0, terminal?.mtimeMs ?? 0);
+      }
+      const percent = state.status === "ok" ? getPrimaryRemainingPercent(state) : null;
+      return { profile, state, percent, lastLaunchAt };
     })
-    .sort((first, second) => second.lastLaunchAt - first.lastLaunchAt)
-    .slice(0, 2);
+    .sort((first, second) => second.lastLaunchAt - first.lastLaunchAt);
 }
 
 export function deleteUsageState(profileName, paths) {
@@ -91,9 +118,8 @@ export function deleteUsageState(profileName, paths) {
 }
 
 export async function refreshContexts(contexts, selected, paths, options) {
-  const targets = new Map(contexts.map(profile => [usageKey(profile), profile]));
-  if (selected) targets.set(usageKey(selected), selected);
-  for (const profile of targets.values()) {
+  const candidates = selected ? [...contexts, selected] : contexts;
+  for (const { profile } of groupProfilesByHome(candidates)) {
     if (fs.existsSync(profile.codexHome)) await refreshUsageState(profile, paths, options);
   }
 }

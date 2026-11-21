@@ -69,19 +69,14 @@ app.on("before-quit", () => {
 });
 
 function rebuildMenu() {
-  const recent = getRecentProfile();
-  const profiles = core.listContexts();
-  const usage = codexUsage.getTrayUsage(profiles, core.getPaths());
+  const rows = codexUsage.getUsageOverview(core.listContexts(), core.getPaths(), getRecentProfile());
+  const profiles = rows.map(({ profile }) => profile);
+  const usage = rows.filter(({ percent }) => percent !== null).slice(0, 2);
   tray.setImage(createUsageIcon(nativeImage, usage));
   tray.setToolTip([
     "CoFlip · 기본 한도 잔여량",
     ...usage.map(({ profile, percent }) => `${profileLabel(profile)} · ${Math.round(percent)}%`),
   ].join("\n"));
-
-  const recentIndex = profiles.findIndex(
-    (profile) => profile.name === recent?.name && profile.codexHome === recent.codexHome,
-  );
-  if (recentIndex > 0) profiles.unshift(profiles.splice(recentIndex, 1)[0]);
 
   const resume = (profile) => openTerminal(profile, ["resume", "--all"]);
   const openApp = (profile) => openAppForProfile(profile, getCodexAppName());
@@ -99,7 +94,7 @@ function rebuildMenu() {
         },
         {
           label: "다른 Mac에서 이어서…",
-          click: () => withChosenProfile(profiles, continueElsewhere).catch(showError),
+          click: () => continueElsewhere(profiles).catch(showError),
         },
       ],
     },
@@ -113,9 +108,9 @@ function rebuildMenu() {
     {
       label: "사용량",
       submenu: [
-        ...profiles.map((profile) => ({
-          label: `${profileLabel(profile)} · ${usageSummary(profile)}`,
-          click: () => showUsage(profile).catch(showError),
+        ...rows.map(({ profile, state, percent }) => ({
+          label: `${profileLabel(profile)} · ${usageSummary(state, percent)}`,
+          click: () => showUsage(profile, state).catch(showError),
         })),
         { type: "separator" },
         { label: "새로 고침", click: refreshAllCodexUsage },
@@ -128,7 +123,9 @@ function rebuildMenu() {
 }
 
 function profileLabel(profile) {
-  return profile.name === core.EXISTING ? "기존 Codex" : profile.name;
+  if (profile.name !== core.EXISTING) return profile.name;
+  const defaultHome = path.resolve(process.env.HOME || os.homedir(), ".codex");
+  return profile.codexHome === defaultHome ? "기본 Codex" : "환경 지정 프로필";
 }
 
 function profileMenuItems(profiles, action, suffix = "") {
@@ -141,28 +138,29 @@ function profileMenuItems(profiles, action, suffix = "") {
 async function withChosenProfile(profiles, action) {
   if (profiles.length === 1) return action(profiles[0]);
 
-  const labels = profiles.map((profile) => appleScriptQuote(profileLabel(profile)));
+  const choices = new Map(profiles.map((profile, index) => [
+    `${index + 1}. ${profileLabel(profile)}`,
+    profile,
+  ]));
+  const labels = Array.from(choices.keys(), appleScriptQuote);
   const picked = await runAppleScriptPrompt([
     `set selected to choose from list {${labels.join(", ")}} with prompt "사용할 프로필을 선택하세요."`,
     'if selected is false then error number -128',
     "return item 1 of selected",
   ].join("\n"));
-  const profile = profiles.find((candidate) => profileLabel(candidate) === picked);
+  const profile = choices.get(picked);
   if (profile) return action(profile);
 }
 
-function usageSummary(profile) {
-  const state = codexUsage.getUsageState(profile, core.getPaths());
+function usageSummary(state, percent) {
   if (state.status === "needs-login") return "로그인 필요";
   if (state.status === "last-known") return "이전 측정값";
   if (state.status === "unknown") return "확인 전";
-  const percent = codexUsage.formatUsageTrayTitle(state);
-  if (percent) return `잔여 ${percent}`;
+  if (percent !== null) return `잔여 ${Math.round(percent)}%`;
   return state.status === "ok" ? "상세 보기" : "조회 불가";
 }
 
-async function showUsage(profile) {
-  const state = codexUsage.getUsageState(profile, core.getPaths());
+async function showUsage(profile, state) {
   const buttons = state.status === "needs-login" ? ["닫기", "브라우저 로그인…"] : ["닫기"];
   const { response } = await dialog.showMessageBox({
     title: "CoFlip",
@@ -209,6 +207,10 @@ function settingsMenu(profiles) {
       });
     }
   }
+  settings.push(
+    { type: "separator" },
+    { label: `CoFlip v${app.getVersion()}`, enabled: false },
+  );
   return settings;
 }
 
@@ -529,11 +531,12 @@ function openTerminal(profile, args, folder = os.homedir()) {
   ].join(" && "));
 }
 
-async function continueElsewhere(profile) {
+async function continueElsewhere(profiles) {
   const { response } = await dialog.showMessageBox({
-    message: "Where should the work run?",
-    detail: `Selected on ${os.hostname()}: ${profile.codexHome}\nTo use a chat stored on another Mac, SSH to that Mac and run cxs resume there. To move a local chat, resume it here, enter /app, then select its run location → Hand off. Both devices need a saved project for the same repository.`,
-    buttons: ["Connect with SSH…", "Resume for handoff", "Connections guide", "Cancel"], cancelId: 3,
+    message: "어느 Mac에 대화가 있나요?",
+    detail: "다른 Mac에 저장된 대화는 SSH로 접속해 그곳에서 엽니다. 이 Mac의 대화를 옮기려면 여기서 대화를 연 뒤 /app에서 Hand off를 선택하세요. 두 기기에 같은 저장소의 프로젝트가 등록되어 있어야 합니다.",
+    buttons: ["다른 Mac에 SSH 연결…", "이 Mac에서 대화 열기…", "연결 가이드", "취소"],
+    cancelId: 3,
   });
   if (response === 0) {
     const host = await promptText("SSH host alias or user@hostname", "Connect");
@@ -541,7 +544,9 @@ async function continueElsewhere(profile) {
     if (!/^[a-zA-Z0-9_][a-zA-Z0-9_.@-]*$/.test(host)) throw new Error("Enter a host alias or user@hostname.");
     runInTerminal(`ssh ${shellQuote(host)}`);
   }
-  if (response === 1) openTerminal(profile, ["resume", "--all"]);
+  if (response === 1) {
+    await withChosenProfile(profiles, (profile) => openTerminal(profile, ["resume", "--all"]));
+  }
   if (response === 2) await shell.openExternal("https://learn.chatgpt.com/docs/remote-connections");
 }
 
